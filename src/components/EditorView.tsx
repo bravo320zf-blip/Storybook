@@ -20,6 +20,9 @@ import {
   PanelLeftOpen,
   Edit2,
   Layers,
+  Layout,
+  Columns,
+  Split,
 } from 'lucide-react';
 import { Story, Character, StoryboardData, WorldMap, BookChapter, BookPage, StoryStatus } from '../types';
 import { MapStampIcon } from '../utils/mapStamps';
@@ -29,6 +32,7 @@ import {
   calculateChapterWords,
   countWords,
   compileBookManuscript,
+  splitTextIntoLetterPages,
 } from '../utils/chapterHelpers';
 import { ExportModal } from './ExportModal';
 import { saveStoryToDrive } from '../services/googleDrive';
@@ -81,7 +85,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
     const chap =
       initialChapters.find((c) => c.id === (story.activeChapterId || initialChapters[0].id)) ||
       initialChapters[0];
-    return story.activePageId && chap.pages.some((p) => p.id === story.activePageId)
+    return story.activePageId && chap.pages.some((p: BookPage) => p.id === story.activePageId)
       ? story.activePageId
       : chap.pages[0]?.id || '';
   });
@@ -92,6 +96,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
     'notes' | 'recap' | 'characters' | 'storyboard' | 'map' | null
   >('notes');
   const [notesSubTab, setNotesSubTab] = useState<'page' | 'chapter' | 'book'>('page');
+  const [layoutMode, setLayoutMode] = useState<'word-pages' | 'single-sheet'>('word-pages');
   const [fullScreen, setFullScreen] = useState(false);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
 
@@ -181,6 +186,87 @@ export const EditorView: React.FC<EditorViewProps> = ({
     setChapters((prev) =>
       prev.map((chap) => (chap.id === activeChapter.id ? { ...chap, ...partial } : chap))
     );
+  };
+
+  // Update page by index in active chapter (for multi-page Word layout)
+  const handleUpdatePageByIndex = (pageIdx: number, newBody: string) => {
+    setChapters((prev) =>
+      prev.map((chap) => {
+        if (chap.id !== activeChapter.id) return chap;
+        return {
+          ...chap,
+          pages: chap.pages.map((p, idx) => {
+            if (idx !== pageIdx) return p;
+            return {
+              ...p,
+              body: newBody,
+              words: countWords(newBody),
+            };
+          }),
+        };
+      })
+    );
+  };
+
+  // Split current page at cursor into next letter page (Ctrl+Enter)
+  const handleSplitOrInsertNextPage = (pIdx: number, cursorIndex: number) => {
+    const targetChap = activeChapter;
+    const curPage = targetChap.pages[pIdx];
+    const fullText = curPage.body || '';
+    const beforeText = fullText.slice(0, cursorIndex);
+    const afterText = fullText.slice(cursorIndex).trim();
+
+    const newPages = [...targetChap.pages];
+    newPages[pIdx] = {
+      ...curPage,
+      body: beforeText,
+      words: countWords(beforeText),
+    };
+
+    const newPageId = `page-${Date.now()}`;
+    const newPage: BookPage = {
+      id: newPageId,
+      title: `Page ${pIdx + 2}`,
+      order: pIdx + 2,
+      body: afterText,
+      notes: '',
+      words: countWords(afterText),
+    };
+
+    newPages.splice(pIdx + 1, 0, newPage);
+    newPages.forEach((p, idx) => {
+      p.order = idx + 1;
+      if (p.title.startsWith('Page ')) {
+        p.title = `Page ${idx + 1}`;
+      }
+    });
+
+    setChapters((prev) =>
+      prev.map((c) => (c.id === targetChap.id ? { ...c, pages: newPages } : c))
+    );
+    setActivePageId(newPageId);
+  };
+
+  // Automatically balance and paginate all text in current chapter into ~300-word Letter Pages
+  const handleAutoPaginateCurrentChapter = () => {
+    const allText = activeChapter.pages.map((p) => p.body || '').join('\n\n').trim();
+    if (!allText) return;
+    const slices = splitTextIntoLetterPages(allText, 300);
+    const newPages: BookPage[] = slices.map((slice, sIdx) => ({
+      id: sIdx < activeChapter.pages.length ? activeChapter.pages[sIdx].id : `page-${Date.now()}-${sIdx}`,
+      title: `Page ${sIdx + 1}`,
+      order: sIdx + 1,
+      body: slice,
+      notes: sIdx < activeChapter.pages.length ? activeChapter.pages[sIdx].notes : '',
+      words: countWords(slice),
+    }));
+
+    setChapters((prev) =>
+      prev.map((c) => (c.id === activeChapter.id ? { ...c, pages: newPages } : c))
+    );
+    if (newPages[0]) {
+      setActivePageId(newPages[0].id);
+    }
   };
 
   // Chapter Management
@@ -646,6 +732,28 @@ export const EditorView: React.FC<EditorViewProps> = ({
               <span>{saveSuccess ? 'Saved in Drive' : isSavingDrive ? 'Saving...' : 'Sync to Drive'}</span>
             </button>
 
+            {/* Layout Mode Toggle */}
+            <button
+              className="action-btn-secondary"
+              onClick={() => setLayoutMode(layoutMode === 'word-pages' ? 'single-sheet' : 'word-pages')}
+              title={layoutMode === 'word-pages' ? 'Switch to Single Sheet Focus' : 'Switch to Word Multi-Page Layout'}
+              style={{ gap: '6px', fontSize: '0.8rem' }}
+            >
+              <Layout size={14} />
+              <span>{layoutMode === 'word-pages' ? 'Word Pages' : 'Single Page'}</span>
+            </button>
+
+            {/* Auto-Paginate Button */}
+            <button
+              className="action-btn-secondary"
+              onClick={handleAutoPaginateCurrentChapter}
+              title="Automatically divide chapter into standard letter-sized pages (~300 words each)"
+              style={{ gap: '6px', fontSize: '0.8rem' }}
+            >
+              <Split size={14} />
+              <span>Split Pages</span>
+            </button>
+
             {/* Multi-Scope Export Button */}
             <button
               className="action-btn-secondary"
@@ -702,96 +810,311 @@ export const EditorView: React.FC<EditorViewProps> = ({
           </div>
         </div>
 
-        {/* The Paper Sheet */}
-        <div className="paper-sheet" style={{ maxWidth: '820px' }}>
-          {/* Book Title Input */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-            <input
-              type="text"
-              className="editor-title-input"
-              value={bookTitle}
-              onChange={(e) => setBookTitle(e.target.value)}
-              placeholder="Book Title…"
-              style={{ marginBottom: 0 }}
-            />
-          </div>
+        {/* The Paper Sheets Area */}
+        {layoutMode === 'word-pages' ? (
+          <div style={{ width: '100%', maxWidth: '816px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            {activeChapter.pages.map((page, pIdx) => {
+              const isCur = page.id === activePageId;
+              const curWords = countWords(page.body || '');
 
-          {/* Chapter & Page Subheading row */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', paddingBottom: '20px', borderBottom: '1px solid var(--line)', marginBottom: '24px' }}>
-            <span style={{ fontSize: '1rem', fontFamily: 'var(--serif)', fontWeight: 600, color: 'var(--accent)' }}>
-              {activeChapter?.title}:
-            </span>
-            <input
-              type="text"
-              value={activePage?.title || ''}
-              onChange={(e) => handleUpdateActivePage({ title: e.target.value })}
-              placeholder="Page title or scene name…"
-              style={{
-                fontFamily: 'var(--serif)',
-                fontSize: '1rem',
-                border: 'none',
-                background: 'transparent',
-                outline: 'none',
-                color: 'var(--ink)',
-                flex: 1,
+              return (
+                <React.Fragment key={page.id}>
+                  {pIdx > 0 && (
+                    <div className="page-break-divider">
+                      <div className="page-break-line" />
+                      <span>Page Break · 8.5" × 11" Letter</span>
+                      <div className="page-break-line" />
+                    </div>
+                  )}
+
+                  <div
+                    id={`letter-page-${page.id}`}
+                    className={`word-letter-sheet ${isCur ? 'active' : ''}`}
+                    onClick={() => setActivePageId(page.id)}
+                  >
+                    {/* Running Header */}
+                    <div className="sheet-header-margin">
+                      <span>{bookTitle}</span>
+                      <span>
+                        {activeChapter?.title} · Page {pIdx + 1} of {activeChapter.pages.length}
+                      </span>
+                    </div>
+
+                    {/* Book & Chapter Title Heading on Page 1 */}
+                    {pIdx === 0 && (
+                      <div style={{ marginBottom: '20px' }}>
+                        <input
+                          type="text"
+                          className="editor-title-input"
+                          value={bookTitle}
+                          onChange={(e) => setBookTitle(e.target.value)}
+                          placeholder="Book Title…"
+                          style={{ marginBottom: '6px' }}
+                        />
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span
+                            style={{
+                              fontSize: '1.15rem',
+                              fontFamily: 'var(--serif)',
+                              fontWeight: 600,
+                              color: 'var(--accent)',
+                            }}
+                          >
+                            {activeChapter?.title}
+                          </span>
+                          <input
+                            type="text"
+                            value={page.title || ''}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              handleUpdateActivePage({ title: val });
+                            }}
+                            placeholder="Subtitle or scene name…"
+                            style={{
+                              fontFamily: 'var(--serif)',
+                              fontSize: '1rem',
+                              fontStyle: 'italic',
+                              border: 'none',
+                              background: 'transparent',
+                              outline: 'none',
+                              color: 'var(--muted)',
+                              flex: 1,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {pIdx > 0 && (
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          marginBottom: '14px',
+                        }}
+                      >
+                        <input
+                          type="text"
+                          value={page.title || ''}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setChapters((prev) =>
+                              prev.map((c) => {
+                                if (c.id !== activeChapter.id) return c;
+                                return {
+                                  ...c,
+                                  pages: c.pages.map((p, idx) =>
+                                    idx === pIdx ? { ...p, title: val } : p
+                                  ),
+                                };
+                              })
+                            );
+                          }}
+                          placeholder={`Page ${pIdx + 1} title…`}
+                          style={{
+                            fontFamily: 'var(--serif)',
+                            fontSize: '0.95rem',
+                            fontStyle: 'italic',
+                            border: 'none',
+                            background: 'transparent',
+                            outline: 'none',
+                            color: 'var(--muted)',
+                          }}
+                        />
+                      </div>
+                    )}
+
+                    {/* Letter Page Body Area */}
+                    <textarea
+                      className="editor-textarea"
+                      value={page.body || ''}
+                      onChange={(e) => handleUpdatePageByIndex(pIdx, e.target.value)}
+                      onKeyDown={(e) => {
+                        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                          e.preventDefault();
+                          handleSplitOrInsertNextPage(pIdx, e.currentTarget.selectionStart);
+                        }
+                      }}
+                      placeholder={
+                        pIdx === 0
+                          ? 'Begin your manuscript on Page 1…'
+                          : `Continue writing Page ${pIdx + 1}…`
+                      }
+                      style={{
+                        minHeight: pIdx === 0 ? '600px' : '700px',
+                        fontSize: '1.2rem',
+                        lineHeight: '1.85',
+                      }}
+                    />
+
+                    {/* Running Footer with Page Number & Word Gauge */}
+                    <div className="sheet-footer-margin">
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          fontSize: '0.74rem',
+                          color: 'var(--muted)',
+                        }}
+                      >
+                        <span>{curWords} / 300 words</span>
+                        {curWords > 320 && (
+                          <span style={{ color: 'var(--warn)', fontWeight: 600 }}>
+                            · Page full (Press Ctrl+Enter for Page {pIdx + 2})
+                          </span>
+                        )}
+                      </div>
+
+                      <span className="sheet-page-badge">— {pIdx + 1} —</span>
+
+                      <button
+                        className="reorder-btn"
+                        style={{ padding: '4px 8px', gap: '4px', fontSize: '0.72rem' }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setActiveDrawerTab('notes');
+                          setNotesSubTab('page');
+                          setActivePageId(page.id);
+                        }}
+                        title="Open notes for this page"
+                      >
+                        <StickyNote
+                          size={12}
+                          style={{ color: page.notes ? 'var(--accent)' : 'var(--muted)' }}
+                        />
+                        <span>Page Notes</span>
+                      </button>
+                    </div>
+                  </div>
+                </React.Fragment>
+              );
+            })}
+
+            {/* Bottom Add Page Button */}
+            <div style={{ display: 'flex', gap: '10px', marginTop: '12px', marginBottom: '60px' }}>
+              <button
+                className="action-btn-primary"
+                onClick={() => handleAddPage(activeChapter.id)}
+              >
+                <Plus size={14} />
+                <span>Add Page {activeChapter.pages.length + 1} (Letter Sheet)</span>
+              </button>
+
+              <button
+                className="action-btn-secondary"
+                onClick={handleAutoPaginateCurrentChapter}
+                title="Evenly distributes all chapter words across standard ~300-word Letter Pages"
+              >
+                <Split size={14} />
+                <span>Balance All Letter Pages</span>
+              </button>
+            </div>
+          </div>
+        ) : (
+          /* Single Page Focus Mode */
+          <div className="word-letter-sheet active" style={{ maxWidth: '816px' }}>
+            <div className="sheet-header-margin">
+              <span>{bookTitle}</span>
+              <span>
+                {activeChapter?.title} · Page {activePageIndex + 1} of {activeChapter?.pages.length}
+              </span>
+            </div>
+
+            <div style={{ marginBottom: '16px' }}>
+              <input
+                type="text"
+                className="editor-title-input"
+                value={bookTitle}
+                onChange={(e) => setBookTitle(e.target.value)}
+                placeholder="Book Title…"
+                style={{ marginBottom: '6px' }}
+              />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span
+                  style={{
+                    fontSize: '1.15rem',
+                    fontFamily: 'var(--serif)',
+                    fontWeight: 600,
+                    color: 'var(--accent)',
+                  }}
+                >
+                  {activeChapter?.title}:
+                </span>
+                <input
+                  type="text"
+                  value={activePage?.title || ''}
+                  onChange={(e) => handleUpdateActivePage({ title: e.target.value })}
+                  placeholder="Page title or scene…"
+                  style={{
+                    fontFamily: 'var(--serif)',
+                    fontSize: '1rem',
+                    fontStyle: 'italic',
+                    border: 'none',
+                    background: 'transparent',
+                    outline: 'none',
+                    color: 'var(--muted)',
+                    flex: 1,
+                  }}
+                />
+              </div>
+            </div>
+
+            <textarea
+              className="editor-textarea"
+              value={activePage?.body || ''}
+              onChange={(e) => handleUpdateActivePage({ body: e.target.value })}
+              onKeyDown={(e) => {
+                if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                  e.preventDefault();
+                  handleSplitOrInsertNextPage(activePageIndex, e.currentTarget.selectionStart);
+                }
               }}
+              placeholder="Write this page or scene here. The words are always, only yours…"
+              style={{ minHeight: '680px', fontSize: '1.2rem', lineHeight: '1.85' }}
             />
-          </div>
 
-          {/* Manuscript Body Text Area */}
-          <textarea
-            className="editor-textarea"
-            value={activePage?.body || ''}
-            onChange={(e) => handleUpdateActivePage({ body: e.target.value })}
-            placeholder="Write this page or scene here. The words are always, only yours…"
-          />
-
-          {/* Page Footer Navigation */}
-          <div
-            style={{
-              marginTop: '40px',
-              paddingTop: '16px',
-              borderTop: '1px solid var(--line)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              fontSize: '0.84rem',
-              color: 'var(--muted)',
-            }}
-          >
-            <button
-              className="action-btn-secondary"
-              style={{ padding: '6px 12px' }}
-              disabled={activePageIndex === 0}
-              onClick={() => setActivePageId(activeChapter.pages[activePageIndex - 1].id)}
-            >
-              ← Previous Page
-            </button>
-
-            <span>
-              {activeChapter?.title} · Page {activePageIndex + 1} of {activeChapter?.pages.length}
-            </span>
-
-            {activePageIndex < activeChapter?.pages.length - 1 ? (
+            <div className="sheet-footer-margin">
               <button
                 className="action-btn-secondary"
                 style={{ padding: '6px 12px' }}
-                onClick={() => setActivePageId(activeChapter.pages[activePageIndex + 1].id)}
+                disabled={activePageIndex === 0}
+                onClick={() => setActivePageId(activeChapter.pages[activePageIndex - 1].id)}
               >
-                Next Page →
+                ← Previous Page
               </button>
-            ) : (
-              <button
-                className="action-btn-primary"
-                style={{ padding: '6px 12px' }}
-                onClick={() => handleAddPage(activeChapter.id)}
-              >
-                <Plus size={13} />
-                <span>Add Next Page</span>
-              </button>
-            )}
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span className="sheet-page-badge">
+                  — Page {activePageIndex + 1} of {activeChapter?.pages.length} —
+                </span>
+                <span style={{ fontSize: '0.74rem', color: 'var(--muted)' }}>
+                  ({pageWords} / 300w)
+                </span>
+              </div>
+
+              {activePageIndex < activeChapter?.pages.length - 1 ? (
+                <button
+                  className="action-btn-secondary"
+                  style={{ padding: '6px 12px' }}
+                  onClick={() => setActivePageId(activeChapter.pages[activePageIndex + 1].id)}
+                >
+                  Next Page →
+                </button>
+              ) : (
+                <button
+                  className="action-btn-primary"
+                  style={{ padding: '6px 12px' }}
+                  onClick={() => handleAddPage(activeChapter.id)}
+                >
+                  <Plus size={13} />
+                  <span>Next Page</span>
+                </button>
+              )}
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Right Drawer: Notes & Studio Peek */}

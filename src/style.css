@@ -696,9 +696,100 @@ input, textarea, select {
   padding: 40px 24px 100px;
 }
 
+/* Word / Google Docs Style Letter-Sized Sheet (8.5in x 11in) */
+.word-letter-sheet {
+  width: 100%;
+  max-width: 816px; /* 8.5in at 96 DPI */
+  min-height: 1056px; /* 11in at 96 DPI */
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08), 0 1px 4px rgba(0, 0, 0, 0.05);
+  padding: 60px 72px 60px;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  margin-bottom: 28px;
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.word-letter-sheet:hover,
+.word-letter-sheet.active {
+  box-shadow: 0 6px 28px rgba(0, 0, 0, 0.14), 0 2px 8px rgba(0, 0, 0, 0.08);
+  border-color: var(--accent);
+}
+
+.sheet-header-margin {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.78rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding-bottom: 18px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--line);
+  user-select: none;
+}
+
+.sheet-footer-margin {
+  margin-top: auto;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  color: var(--muted);
+  user-select: none;
+}
+
+.sheet-page-badge {
+  font-family: var(--serif);
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--ink);
+  letter-spacing: 0.05em;
+}
+
+.page-break-divider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin: 8px 0 28px;
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  user-select: none;
+  width: 100%;
+  max-width: 816px;
+}
+
+.page-break-line {
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
+.page-full-banner {
+  background: var(--accent-soft);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.78rem;
+  margin-bottom: 14px;
+}
+
 .paper-sheet {
   width: 100%;
-  max-width: 780px;
+  max-width: 816px;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 8px;
