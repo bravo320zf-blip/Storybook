@@ -576,14 +576,115 @@ input, textarea, select {
 }
 
 .editor-chapters-sidebar {
-  width: 260px;
+  width: 290px;
   background: var(--panel);
   border-right: 1px solid var(--line);
-  padding: 20px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
   overflow-y: auto;
+  flex-shrink: 0;
+  transition: width 0.2s ease, opacity 0.2s ease;
+}
+
+.sidebar-toc-header {
+  padding: 16px 14px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--bg);
+}
+
+.chapter-node {
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.chapter-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  user-select: none;
+}
+
+.chapter-header-row:hover {
+  background: var(--accent-soft);
+}
+
+.chapter-header-row.active {
+  background: var(--accent-soft);
+  font-weight: 600;
+}
+
+.page-node-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 12px 7px 28px;
+  font-size: 0.84rem;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.page-node-item:hover {
+  background: rgba(0, 0, 0, 0.03);
+  color: var(--ink);
+}
+
+:root[data-mode="dark"] .page-node-item:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.page-node-item.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+  border-left: 3px solid var(--accent);
+}
+
+.reorder-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 2px;
+  color: var(--muted);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.reorder-btn:hover {
+  color: var(--ink);
+  background: var(--line);
+}
+
+.notes-card {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.notes-textarea {
+  width: 100%;
+  min-height: 100px;
+  background: transparent;
+  border: none;
+  resize: vertical;
+  outline: none;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--ink);
+  font-family: inherit;
 }
 
 .editor-main-paper {

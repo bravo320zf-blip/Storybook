@@ -1,4 +1,4 @@
-import { Story, StoryStatus, StoryboardData, Character, WorldMap } from '../types';
+import { Story, StoryStatus, StoryboardData, Character, WorldMap, BookChapter } from '../types';
 
 const DRIVE_API_URL = 'https://www.googleapis.com/drive/v3';
 const UPLOAD_API_URL = 'https://www.googleapis.com/upload/drive/v3';
@@ -96,14 +96,17 @@ export async function saveStoryToDrive(
   story: Story
 ): Promise<string> {
   const fileName = `${story.title || 'Untitled Story'}.md`;
+  const chaptersJson = story.chapters ? JSON.stringify(story.chapters) : '';
   const fileContent = `---
-title: "${story.title.replace(/"/g, '\\"')}"
+title: "${(story.title || '').replace(/"/g, '\\"')}"
 id: "${story.id}"
 status: "${story.status}"
 words: ${story.words}
 edited: ${new Date(story.edited).toISOString()}
 summary: "${(story.summary || '').replace(/"/g, '\\"')}"
----
+${story.notes ? `notes: "${story.notes.replace(/"/g, '\\"').replace(/\n/g, '\\n')}"\n` : ''}${
+  chaptersJson ? `chapters: ${JSON.stringify(chaptersJson)}\n` : ''
+}---
 
 # ${story.title}
 
@@ -448,6 +451,8 @@ export function parseStoryFile(
   id?: string;
   status?: StoryStatus;
   summary?: string;
+  notes?: string;
+  chapters?: BookChapter[];
   body: string;
 } {
   const cleanTitle = fileName.replace(/\.(md|txt|markdown|doc|docx)$/i, '').trim();
@@ -462,6 +467,8 @@ export function parseStoryFile(
       let id: string | undefined;
       let status: StoryStatus | undefined;
       let summary: string | undefined;
+      let notes: string | undefined;
+      let chapters: BookChapter[] | undefined;
 
       const titleMatch = frontmatter.match(/title:\s*["']?([^"'\n\r]+)["']?/i);
       if (titleMatch) title = titleMatch[1].trim();
@@ -480,12 +487,27 @@ export function parseStoryFile(
       const summaryMatch = frontmatter.match(/summary:\s*["']?([^"'\n\r]+)["']?/i);
       if (summaryMatch) summary = summaryMatch[1].trim();
 
+      const notesMatch = frontmatter.match(/notes:\s*["']?([^"'\r\n]+)["']?/i);
+      if (notesMatch) {
+        notes = notesMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"');
+      }
+
+      const chaptersMatch = frontmatter.match(/chapters:\s*("(\\"|[^"])*"|'(\\'|[^'])*')/i);
+      if (chaptersMatch) {
+        try {
+          const raw = JSON.parse(chaptersMatch[1]);
+          chapters = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        } catch (e) {
+          console.warn('Could not parse chapters frontmatter:', e);
+        }
+      }
+
       // If body starts with "# Title", strip redundant heading
       if (body.startsWith(`# ${title}`)) {
         body = body.replace(new RegExp(`^#\\s*${escapeRegExp(title)}\\s*\\r?\\n*`, 'i'), '').trim();
       }
 
-      return { title: title || cleanTitle, id, status, summary, body };
+      return { title: title || cleanTitle, id, status, summary, notes, chapters, body };
     }
   }
 
@@ -616,6 +638,8 @@ export async function syncBiDirectionalWithGoogleDrive(
             gdriveLastSynced: remoteModified,
             ...(parsed.status ? { status: parsed.status } : {}),
             ...(parsed.summary ? { summary: parsed.summary } : {}),
+            ...(parsed.notes !== undefined ? { notes: parsed.notes } : {}),
+            ...(parsed.chapters ? { chapters: parsed.chapters } : {}),
           };
           updatedStories[matchIdx] = updated;
           updatedLocalCount++;
@@ -662,6 +686,8 @@ export async function syncBiDirectionalWithGoogleDrive(
             (parsed.body
               ? parsed.body.slice(0, 140).trim().replace(/\n/g, ' ') + '…'
               : 'Imported from Google Drive.'),
+          notes: parsed.notes || '',
+          chapters: parsed.chapters,
           gdriveFileId: rFile.id,
           gdriveLastSynced: remoteModified || Date.now(),
         };

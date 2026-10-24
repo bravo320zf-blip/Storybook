@@ -1,5 +1,23 @@
 export type StoryStatus = 'drafting' | 'stuck' | 'needs-ending' | 'resting' | 'finished';
 
+export interface BookPage {
+  id: string;
+  title: string;
+  order: number;
+  body: string;
+  notes?: string; // Notes for this specific page / scene
+  words?: number;
+}
+
+export interface BookChapter {
+  id: string;
+  title: string;
+  order: number;
+  summary?: string;
+  notes?: string; // Notes for this chapter (outline, pacing, goals)
+  pages: BookPage[];
+}
+
 export interface Story {
   id: string;
   title: string;
@@ -15,7 +33,10 @@ export interface Story {
   order?: number;
   gdriveFileId?: string;
   gdriveLastSynced?: number;
-  notes?: string;
+  notes?: string; // Notes for the entire book / manuscript
+  chapters?: BookChapter[];
+  activeChapterId?: string;
+  activePageId?: string;
 }
 
 export interface Project {

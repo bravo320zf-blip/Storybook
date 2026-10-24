@@ -534,6 +534,8 @@ export const App: React.FC = () => {
             onSaveToDrive={handleSaveStoryToDrive}
             onDeleteStory={handleDeleteStory}
             driveFolderName={config.googleDriveFolderName}
+            googleAccessToken={config.googleAccessToken}
+            driveFolderId={config.googleDriveFolderId}
           />
         ) : currentView === 'dashboard' ? (
           <DashboardView
