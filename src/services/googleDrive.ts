@@ -16,6 +16,24 @@ export interface DriveFileItem {
  * If not found, creates it and returns the folder ID.
  */
 export async function getOrCreateFolder(accessToken: string, folderName: string = 'Inkling Stories'): Promise<string> {
+  const cacheKey = `ink_drive_folder_id_${folderName}`;
+  const cachedId = localStorage.getItem(cacheKey);
+
+  // If we have a cached folder ID, verify it exists
+  if (cachedId) {
+    try {
+      const checkRes = await fetch(`${DRIVE_API_URL}/files/${cachedId}?fields=id,name,trashed`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (checkRes.ok) {
+        const item = await checkRes.json();
+        if (!item.trashed) return cachedId;
+      }
+    } catch (e) {
+      // Continue to search or create
+    }
+  }
+
   const query = `name = '${folderName}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
   const res = await fetch(`${DRIVE_API_URL}/files?q=${encodeURIComponent(query)}&fields=files(id, name)`, {
     headers: {
@@ -25,12 +43,19 @@ export async function getOrCreateFolder(accessToken: string, folderName: string 
 
   if (!res.ok) {
     const errText = await res.text();
-    throw new Error(`Failed to query Google Drive: ${res.statusText} - ${errText}`);
-  }
-
-  const data = await res.json();
-  if (data.files && data.files.length > 0) {
-    return data.files[0].id;
+    if (res.status === 403 && errText.includes('ACCESS_TOKEN_SCOPE_INSUFFICIENT')) {
+      throw new Error(
+        'Google Drive permissions were not approved in the Google sign-in prompt. Please reconnect in Setup & Drive and ensure you check the box for Google Drive access.'
+      );
+    }
+    // If querying failed for other reasons, try creating the folder directly
+    console.warn(`Query failed (${res.status}), attempting direct folder creation...`);
+  } else {
+    const data = await res.json();
+    if (data.files && data.files.length > 0) {
+      localStorage.setItem(cacheKey, data.files[0].id);
+      return data.files[0].id;
+    }
   }
 
   // Create the folder
@@ -48,10 +73,17 @@ export async function getOrCreateFolder(accessToken: string, folderName: string 
   });
 
   if (!createRes.ok) {
-    throw new Error(`Failed to create Google Drive folder: ${createRes.statusText}`);
+    const createErr = await createRes.text();
+    if (createRes.status === 403 && createErr.includes('ACCESS_TOKEN_SCOPE_INSUFFICIENT')) {
+      throw new Error(
+        'Google Drive permissions were not approved in the Google sign-in prompt. Please reconnect in Setup & Drive and ensure you check the box for Google Drive access.'
+      );
+    }
+    throw new Error(`Failed to create Google Drive folder: ${createRes.statusText} - ${createErr}`);
   }
 
   const newFolder = await createRes.json();
+  localStorage.setItem(cacheKey, newFolder.id);
   return newFolder.id;
 }
 
@@ -362,6 +394,103 @@ export async function syncAllToGoogleDrive(
   return {
     folderId,
     syncedStories,
+    syncedAt: Date.now(),
+  };
+}
+
+/**
+ * Intelligent incremental sync: ONLY syncs stories, characters, boards, or maps that have actually changed!
+ */
+export async function syncIncrementalToGoogleDrive(
+  accessToken: string,
+  folderName: string,
+  data: {
+    stories: Story[];
+    characters: Character[];
+    storyboards: Record<string, StoryboardData>;
+    maps: WorldMap[];
+  },
+  lastModifiedState: {
+    charactersLastModified: number;
+    charactersLastSynced: number;
+    storyboardLastModified: number;
+    storyboardLastSynced: number;
+    mapsLastModified: number;
+    mapsLastSynced: number;
+  }
+): Promise<{
+  folderId: string;
+  syncedStoriesCount: number;
+  syncedCharacters: boolean;
+  syncedStoryboard: boolean;
+  syncedMaps: boolean;
+  updatedStories: Story[];
+  syncedAt: number;
+}> {
+  const folderId = await getOrCreateFolder(accessToken, folderName);
+  let syncedStoriesCount = 0;
+  const updatedStories: Story[] = [];
+
+  for (const story of data.stories) {
+    const isDirty = story.edited > (story.gdriveLastSynced || 0);
+    if (isDirty) {
+      try {
+        const fileId = await saveStoryToDrive(accessToken, folderId, story);
+        updatedStories.push({
+          ...story,
+          gdriveFileId: fileId,
+          gdriveLastSynced: Date.now(),
+        });
+        syncedStoriesCount++;
+      } catch (err) {
+        console.error(`Failed to incremental sync story "${story.title}":`, err);
+        updatedStories.push(story);
+      }
+    } else {
+      updatedStories.push(story);
+    }
+  }
+
+  // Check if characters were modified
+  let syncedCharacters = false;
+  if (lastModifiedState.charactersLastModified > lastModifiedState.charactersLastSynced) {
+    try {
+      await saveJsonToDrive(accessToken, folderId, 'characters.json', data.characters);
+      syncedCharacters = true;
+    } catch (e) {
+      console.error('Incremental sync characters failed:', e);
+    }
+  }
+
+  // Check if storyboard was modified
+  let syncedStoryboard = false;
+  if (lastModifiedState.storyboardLastModified > lastModifiedState.storyboardLastSynced) {
+    try {
+      await saveJsonToDrive(accessToken, folderId, 'storyboards.json', data.storyboards);
+      syncedStoryboard = true;
+    } catch (e) {
+      console.error('Incremental sync storyboard failed:', e);
+    }
+  }
+
+  // Check if maps were modified
+  let syncedMaps = false;
+  if (lastModifiedState.mapsLastModified > lastModifiedState.mapsLastSynced) {
+    try {
+      await saveJsonToDrive(accessToken, folderId, 'maps.json', data.maps);
+      syncedMaps = true;
+    } catch (e) {
+      console.error('Incremental sync maps failed:', e);
+    }
+  }
+
+  return {
+    folderId,
+    syncedStoriesCount,
+    syncedCharacters,
+    syncedStoryboard,
+    syncedMaps,
+    updatedStories,
     syncedAt: Date.now(),
   };
 }

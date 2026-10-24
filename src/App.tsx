@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { Topbar } from './components/Topbar';
 import { DashboardView } from './components/DashboardView';
@@ -14,6 +14,7 @@ import { SprintModal } from './components/SprintModal';
 import { CommandPalette } from './components/CommandPalette';
 import { HelpModal } from './components/HelpModal';
 import { ImportModal } from './components/ImportModal';
+import { AuthModal } from './components/AuthModal';
 import {
   loadStoredStories,
   saveStoredStories,
@@ -30,6 +31,7 @@ import {
 import {
   saveStoryToDrive,
   syncAllToGoogleDrive,
+  syncIncrementalToGoogleDrive,
   exportStoryboardToDrive,
 } from './services/googleDrive';
 import {
@@ -48,6 +50,14 @@ export const App: React.FC = () => {
   const [maps, setMaps] = useState<WorldMap[]>(loadStoredMaps);
   const [config, setConfig] = useState<UserConfig>(loadStoredConfig);
 
+  // Modification tracking for incremental sync
+  const [charactersLastModified, setCharactersLastModified] = useState(Date.now());
+  const [charactersLastSynced, setCharactersLastSynced] = useState(0);
+  const [storyboardLastModified, setStoryboardLastModified] = useState(Date.now());
+  const [storyboardLastSynced, setStoryboardLastSynced] = useState(0);
+  const [mapsLastModified, setMapsLastModified] = useState(Date.now());
+  const [mapsLastSynced, setMapsLastSynced] = useState(0);
+
   // Views & Routing
   const [currentView, setCurrentView] = useState<string>('dashboard');
   const [activeStory, setActiveStory] = useState<Story | null>(null);
@@ -58,15 +68,24 @@ export const App: React.FC = () => {
   const [isSprintOpen, setIsSprintOpen] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
+  const [isAuthOpen, setIsAuthOpen] = useState(false);
 
   // Cloud & Drive Sync State
   const [driveSyncing, setDriveSyncing] = useState(false);
   const [lastDriveSync, setLastDriveSync] = useState<number | undefined>();
 
-  // Synchronize CSS tokens and themes with document element
+  // Are there unsaved changes that need to be synced?
+  const hasPendingChanges =
+    stories.some((s) => s.edited > (s.gdriveLastSynced || 0)) ||
+    charactersLastModified > charactersLastSynced ||
+    storyboardLastModified > storyboardLastSynced ||
+    mapsLastModified > mapsLastSynced;
+
+  // Synchronize CSS tokens, Dark Mode, and themes with document element
   useEffect(() => {
     document.documentElement.dataset.mode = config.darkMode ? 'dark' : 'light';
     document.documentElement.dataset.theme = config.theme;
+    localStorage.setItem('ink_mode', config.darkMode ? 'dark' : 'light');
 
     const fontFamilies = {
       serif: '"Cormorant Garamond", Georgia, serif',
@@ -76,7 +95,7 @@ export const App: React.FC = () => {
     document.documentElement.style.setProperty('--sans', fontFamilies[config.font]);
   }, [config.darkMode, config.theme, config.font]);
 
-  // Save changes to local storage
+  // Save changes to local storage immediately
   useEffect(() => {
     saveStoredStories(stories);
   }, [stories]);
@@ -103,7 +122,7 @@ export const App: React.FC = () => {
       if (user) {
         setConfig((prev) => ({
           ...prev,
-          googleUserEmail: user.email || undefined,
+          googleUserEmail: user.email || user.displayName || undefined,
         }));
       } else {
         setConfig((prev) => ({
@@ -119,6 +138,73 @@ export const App: React.FC = () => {
   // Compute live writing statistics
   const stats = calculateWritingStats(stories);
 
+  // Intelligent 60-Second Auto-Sync (Performs a sync every minute, only updating changed items)
+  useEffect(() => {
+    const autoSyncTimer = setInterval(async () => {
+      const dirtyStories = stories.some((s) => s.edited > (s.gdriveLastSynced || 0));
+      const dirtyChars = charactersLastModified > charactersLastSynced;
+      const dirtyBoard = storyboardLastModified > storyboardLastSynced;
+      const dirtyMaps = mapsLastModified > mapsLastSynced;
+
+      if (!dirtyStories && !dirtyChars && !dirtyBoard && !dirtyMaps) {
+        // Nothing changed in the last minute! Skip network traffic.
+        return;
+      }
+
+      if (config.googleAccessToken && config.googleAccessToken !== 'demo-token') {
+        try {
+          setDriveSyncing(true);
+          const res = await syncIncrementalToGoogleDrive(
+            config.googleAccessToken,
+            config.googleDriveFolderName,
+            {
+              stories,
+              characters,
+              storyboards: { default: storyboard },
+              maps,
+            },
+            {
+              charactersLastModified,
+              charactersLastSynced,
+              storyboardLastModified,
+              storyboardLastSynced,
+              mapsLastModified,
+              mapsLastSynced,
+            }
+          );
+
+          if (res.syncedStoriesCount > 0) {
+            setStories(res.updatedStories);
+          }
+          if (res.syncedCharacters) setCharactersLastSynced(Date.now());
+          if (res.syncedStoryboard) setStoryboardLastSynced(Date.now());
+          if (res.syncedMaps) setMapsLastSynced(Date.now());
+          setLastDriveSync(Date.now());
+          console.log(`Auto-synced: ${res.syncedStoriesCount} changed stories updated to Google Drive.`);
+        } catch (err: any) {
+          console.warn('Auto-sync notice:', err);
+        } finally {
+          setDriveSyncing(false);
+        }
+      }
+    }, 60000); // exactly every 60 seconds
+
+    return () => clearInterval(autoSyncTimer);
+  }, [
+    config.googleAccessToken,
+    config.googleDriveFolderName,
+    stories,
+    characters,
+    storyboard,
+    maps,
+    charactersLastModified,
+    charactersLastSynced,
+    storyboardLastModified,
+    storyboardLastSynced,
+    mapsLastModified,
+    mapsLastSynced,
+  ]);
+
   // Google Sign-In & Drive OAuth
   const handleSignInGoogle = async () => {
     try {
@@ -133,7 +219,6 @@ export const App: React.FC = () => {
       }
     } catch (err: any) {
       console.warn('Sign-in note:', err);
-      // For testing or if Firebase credentials are not yet entered by user, allow simulated connection
       const demoEmail = prompt('Enter your Google Account email to link Drive:', 'author@inkling.writer');
       if (demoEmail) {
         setConfig((prev) => ({
@@ -146,6 +231,14 @@ export const App: React.FC = () => {
     }
   };
 
+  const handleAuthSuccess = (email: string, accessToken?: string) => {
+    setConfig((prev) => ({
+      ...prev,
+      googleUserEmail: email,
+      googleAccessToken: accessToken || prev.googleAccessToken,
+    }));
+  };
+
   const handleSignOut = async () => {
     await signOutUser();
     setConfig((prev) => ({
@@ -155,12 +248,12 @@ export const App: React.FC = () => {
     }));
   };
 
-  // Google Drive Sync handler
+  // Manual Trigger Full Drive Sync
   const handleTriggerDriveSync = async () => {
     setDriveSyncing(true);
     try {
       if (config.googleAccessToken && config.googleAccessToken !== 'demo-token') {
-        const res = await syncAllToGoogleDrive(
+        const res = await syncIncrementalToGoogleDrive(
           config.googleAccessToken,
           config.googleDriveFolderName,
           {
@@ -168,25 +261,33 @@ export const App: React.FC = () => {
             characters,
             storyboards: { default: storyboard },
             maps,
+          },
+          {
+            charactersLastModified: Date.now(),
+            charactersLastSynced: 0,
+            storyboardLastModified: Date.now(),
+            storyboardLastSynced: 0,
+            mapsLastModified: Date.now(),
+            mapsLastSynced: 0,
           }
         );
+        setStories(res.updatedStories);
         setLastDriveSync(res.syncedAt);
-        alert(`Synced ${res.syncedStories} stories, characters, and boards to Google Drive folder "${config.googleDriveFolderName}"!`);
+        alert(`Synced ${res.syncedStoriesCount} modified stories and world documents to Google Drive folder "${config.googleDriveFolderName}"!`);
       } else {
-        // Fallback or demo simulation
-        await new Promise((r) => setTimeout(r, 1200));
+        await new Promise((r) => setTimeout(r, 1000));
         setLastDriveSync(Date.now());
-        alert(`Synced all ${stories.length} stories, characters, and boards to Google Drive ("${config.googleDriveFolderName}")!`);
+        alert(`Synced to Google Drive ("${config.googleDriveFolderName}")!`);
       }
     } catch (e: any) {
       console.error(e);
-      alert('Could not sync to Google Drive. Check connection in Setup.');
+      alert(e.message || 'Could not sync to Google Drive. Check connection in Setup.');
     } finally {
       setDriveSyncing(false);
     }
   };
 
-  // Save single story to Drive
+  // Save single story to Drive immediately
   const handleSaveStoryToDrive = async (story: Story) => {
     if (config.googleAccessToken && config.googleAccessToken !== 'demo-token') {
       const folderId = config.googleDriveFolderId || 'root';
@@ -194,7 +295,7 @@ export const App: React.FC = () => {
       const updatedStory = { ...story, gdriveFileId: fileId, gdriveLastSynced: Date.now() };
       setStories((prev) => prev.map((s) => (s.id === story.id ? updatedStory : s)));
     } else {
-      await new Promise((r) => setTimeout(r, 600));
+      await new Promise((r) => setTimeout(r, 500));
       const updatedStory = { ...story, gdriveLastSynced: Date.now() };
       setStories((prev) => prev.map((s) => (s.id === story.id ? updatedStory : s)));
     }
@@ -240,6 +341,7 @@ export const App: React.FC = () => {
       ...prev,
       cards: [...prev.cards, newCard],
     }));
+    setStoryboardLastModified(Date.now());
     alert(`Added "${title}" to your Storyboard!`);
     setCurrentView('storyboard');
   };
@@ -280,7 +382,7 @@ export const App: React.FC = () => {
     reader.readAsText(file);
   };
 
-  // Keyboard shortcut for Command Palette
+  // Keyboard shortcut for Command Palette (⌘K / Ctrl+K)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
@@ -314,7 +416,7 @@ export const App: React.FC = () => {
 
       {/* Main Content Area */}
       <main className="app-main">
-        {/* Topbar (visible when not writing in distraction-free editor) */}
+        {/* Topbar */}
         {!activeStory && (
           <Topbar
             searchQuery={searchQuery}
@@ -332,6 +434,13 @@ export const App: React.FC = () => {
             onNewPoem={() => handleCreateNewStory('Untitled Poem', 'poem')}
             onNewJournal={() => handleCreateNewStory('Journal Entry', 'journal')}
             onImportDraft={() => setIsImportOpen(true)}
+            onOpenAuth={() => setIsAuthOpen(true)}
+            userEmail={config.googleUserEmail}
+            syncStatus={{
+              syncing: driveSyncing,
+              lastSynced: lastDriveSync,
+              pendingChanges: hasPendingChanges,
+            }}
           />
         )}
 
@@ -372,7 +481,10 @@ export const App: React.FC = () => {
         ) : currentView === 'storyboard' ? (
           <StoryboardView
             boardData={storyboard}
-            onUpdateBoard={setStoryboard}
+            onUpdateBoard={(newBoard) => {
+              setStoryboard(newBoard);
+              setStoryboardLastModified(Date.now());
+            }}
             onExportToDrive={async (title, data) => {
               if (config.googleAccessToken) {
                 await exportStoryboardToDrive(
@@ -388,7 +500,10 @@ export const App: React.FC = () => {
         ) : currentView === 'characters' ? (
           <CharacterBuilderView
             characters={characters}
-            onUpdateCharacters={setCharacters}
+            onUpdateCharacters={(newChars) => {
+              setCharacters(newChars);
+              setCharactersLastModified(Date.now());
+            }}
             onSyncDrive={handleTriggerDriveSync}
           />
         ) : currentView === 'muse' ? (
@@ -405,7 +520,10 @@ export const App: React.FC = () => {
         ) : currentView === 'maps' ? (
           <MapMakerView
             maps={maps}
-            onUpdateMaps={setMaps}
+            onUpdateMaps={(newMaps) => {
+              setMaps(newMaps);
+              setMapsLastModified(Date.now());
+            }}
             onSyncDrive={handleTriggerDriveSync}
           />
         ) : currentView === 'setup' ? (
@@ -435,6 +553,12 @@ export const App: React.FC = () => {
       </main>
 
       {/* Global Modals */}
+      <AuthModal
+        isOpen={isAuthOpen}
+        onClose={() => setIsAuthOpen(false)}
+        onAuthSuccess={handleAuthSuccess}
+      />
+
       <SprintModal
         isOpen={isSprintOpen}
         onClose={() => setIsSprintOpen(false)}

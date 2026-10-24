@@ -12,6 +12,10 @@ import {
   Heart,
   UploadCloud,
   Timer,
+  User as UserIcon,
+  RefreshCw,
+  Cloud,
+  Check,
 } from 'lucide-react';
 import { UserConfig } from '../types';
 
@@ -29,6 +33,13 @@ interface TopbarProps {
   onNewPoem: () => void;
   onNewJournal: () => void;
   onImportDraft: () => void;
+  onOpenAuth: () => void;
+  userEmail?: string;
+  syncStatus: {
+    syncing: boolean;
+    lastSynced?: number;
+    pendingChanges: boolean;
+  };
 }
 
 export const Topbar: React.FC<TopbarProps> = ({
@@ -45,6 +56,9 @@ export const Topbar: React.FC<TopbarProps> = ({
   onNewPoem,
   onNewJournal,
   onImportDraft,
+  onOpenAuth,
+  userEmail,
+  syncStatus,
 }) => {
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -83,6 +97,45 @@ export const Topbar: React.FC<TopbarProps> = ({
         <span>Sprint</span>
       </button>
 
+      {/* Incremental Auto-Sync Indicator (Syncs every minute) */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '6px',
+          fontSize: '0.78rem',
+          padding: '4px 10px',
+          borderRadius: '16px',
+          background: 'var(--bg)',
+          border: '1px solid var(--line)',
+          color: 'var(--muted)',
+        }}
+        title={
+          syncStatus.syncing
+            ? 'Syncing changes to Google Drive and Firebase...'
+            : syncStatus.pendingChanges
+            ? 'Changes pending (Auto-syncs every 60s)'
+            : 'All changes synced to cloud'
+        }
+      >
+        {syncStatus.syncing ? (
+          <>
+            <RefreshCw size={12} className="animate-spin text-warn" />
+            <span>Syncing…</span>
+          </>
+        ) : syncStatus.pendingChanges ? (
+          <>
+            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--warn)' }} />
+            <span>Pending sync</span>
+          </>
+        ) : (
+          <>
+            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--good)' }} />
+            <span>Synced</span>
+          </>
+        )}
+      </div>
+
       {/* Help Tips */}
       <button className="icon-btn" onClick={onOpenHelp} title="Tips & features guide">
         <HelpCircle size={16} />
@@ -94,9 +147,17 @@ export const Topbar: React.FC<TopbarProps> = ({
       <button
         className="icon-btn"
         onClick={onToggleDarkMode}
+        style={{
+          background: config.darkMode ? 'var(--accent-soft)' : 'transparent',
+          border: '1px solid var(--line)',
+        }}
         title={config.darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
       >
-        {config.darkMode ? <Sun size={17} /> : <Moon size={17} />}
+        {config.darkMode ? (
+          <Sun size={17} style={{ color: '#FDB813' }} />
+        ) : (
+          <Moon size={17} style={{ color: 'var(--ink)' }} />
+        )}
       </button>
 
       {/* Theme selection */}
@@ -118,6 +179,30 @@ export const Topbar: React.FC<TopbarProps> = ({
         <option value="slate">Slate</option>
         <option value="forest">Forest</option>
       </select>
+
+      {/* User Account / Sign In Pill */}
+      {userEmail ? (
+        <button
+          className="action-btn-secondary"
+          onClick={onOpenAuth}
+          style={{ padding: '4px 10px', fontSize: '0.8rem', gap: '6px' }}
+          title={`Account: ${userEmail}`}
+        >
+          <UserIcon size={13} style={{ color: 'var(--accent)' }} />
+          <span style={{ maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {userEmail.split('@')[0]}
+          </span>
+        </button>
+      ) : (
+        <button
+          className="action-btn-secondary"
+          onClick={onOpenAuth}
+          style={{ padding: '4px 10px', fontSize: '0.8rem', gap: '6px' }}
+        >
+          <UserIcon size={13} />
+          <span>Sign In</span>
+        </button>
+      )}
 
       {/* New Story split button */}
       <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>

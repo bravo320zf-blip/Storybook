@@ -5,6 +5,9 @@ import {
   signInWithPopup,
   signOut as fbSignOut,
   onAuthStateChanged,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  updateProfile,
   User,
   Auth,
 } from 'firebase/auth';
@@ -67,12 +70,13 @@ export function initFirebase(customConfig?: Partial<typeof defaultFirebaseConfig
 initFirebase();
 
 export const googleProvider = new GoogleAuthProvider();
-// Request Google Drive file scope for storing manuscripts
+// Request Google Drive scopes for storing manuscripts and folders
 googleProvider.addScope('https://www.googleapis.com/auth/drive.file');
+googleProvider.addScope('https://www.googleapis.com/auth/drive');
 googleProvider.addScope('https://www.googleapis.com/auth/userinfo.profile');
 googleProvider.addScope('https://www.googleapis.com/auth/userinfo.email');
 googleProvider.setCustomParameters({
-  prompt: 'consent',
+  prompt: 'select_account consent',
   access_type: 'offline',
 });
 
@@ -92,6 +96,25 @@ export async function signInWithGoogle(): Promise<{ user: User; accessToken?: st
     user: result.user,
     accessToken,
   };
+}
+
+export async function signUpWithEmail(email: string, password: string, displayName?: string): Promise<User> {
+  if (!auth) {
+    throw new Error('Firebase Auth is not configured yet. Please configure Firebase in Setup.');
+  }
+  const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+  if (displayName && userCredential.user) {
+    await updateProfile(userCredential.user, { displayName });
+  }
+  return userCredential.user;
+}
+
+export async function signInWithEmail(email: string, password: string): Promise<User> {
+  if (!auth) {
+    throw new Error('Firebase Auth is not configured yet. Please configure Firebase in Setup.');
+  }
+  const userCredential = await signInWithEmailAndPassword(auth, email, password);
+  return userCredential.user;
 }
 
 export async function signOutUser(): Promise<void> {
