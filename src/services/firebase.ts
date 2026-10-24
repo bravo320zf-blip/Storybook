@@ -164,12 +164,17 @@ export async function saveUserDataToFirestore(
   await setDoc(ref, data, { merge: true });
 }
 
-export async function loadUserDataFromFirestore(userId: string) {
-  if (!db) return null;
-  const ref = doc(db, `users/${userId}/workspace`, 'data');
-  const snap = await getDoc(ref);
-  if (snap.exists()) {
-    return snap.data();
+export async function clearUserFirestoreData(userId: string): Promise<void> {
+  if (!db) return;
+  try {
+    const storiesCol = collection(db, `users/${userId}/stories`);
+    const storiesSnap = await getDocs(storiesCol);
+    for (const d of storiesSnap.docs) {
+      await deleteDoc(d.ref);
+    }
+    const wsRef = doc(db, `users/${userId}/workspace`, 'data');
+    await deleteDoc(wsRef);
+  } catch (err) {
+    console.error('Failed to wipe Firestore user data:', err);
   }
-  return null;
 }

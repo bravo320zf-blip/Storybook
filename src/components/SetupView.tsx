@@ -26,6 +26,7 @@ interface SetupViewProps {
     syncing: boolean;
     lastSynced?: number;
   };
+  onWipeAllData: () => Promise<void>;
 }
 
 export const SetupView: React.FC<SetupViewProps> = ({
@@ -36,6 +37,7 @@ export const SetupView: React.FC<SetupViewProps> = ({
   onImportBackupJson,
   onSignInWithGoogle,
   driveSyncStatus,
+  onWipeAllData,
 }) => {
   const [folderName, setFolderName] = useState(config.googleDriveFolderName || 'Inkling Stories');
   const [firebaseApiKey, setFirebaseApiKey] = useState(config.firebaseApiKey || '');
@@ -326,6 +328,45 @@ export const SetupView: React.FC<SetupViewProps> = ({
                 <option value="mono">Courier Prime (Typewriter Monospace)</option>
               </select>
             </div>
+          </div>
+        </div>
+
+        {/* Danger Zone: Wipe Test Data */}
+        <div
+          style={{
+            background: 'rgba(163, 67, 43, 0.05)',
+            border: '1px solid var(--crit)',
+            borderRadius: '12px',
+            padding: '24px 28px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '20px' }}>
+            <div>
+              <h4 style={{ color: 'var(--crit)', fontSize: '1.05rem', fontWeight: 600, marginBottom: '4px' }}>
+                Wipe All Test Data & Reset to Clean Slate
+              </h4>
+              <p style={{ fontSize: '0.82rem', color: 'var(--muted)' }}>
+                Removes all sample stories (e.g. <i>A Vow of Ash and Wing</i>, <i>The Lighthouse at Renn</i>), characters, and boards from your local workspace, Firebase, and deletes the <b>{folderName}</b> folder and test files from your Google Drive.
+              </p>
+            </div>
+            <button
+              onClick={onWipeAllData}
+              style={{
+                background: 'var(--crit)',
+                color: '#fff',
+                fontWeight: 600,
+                fontSize: '0.85rem',
+                padding: '10px 18px',
+                borderRadius: '8px',
+                whiteSpace: 'nowrap',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                boxShadow: 'var(--shadow-sm)',
+              }}
+            >
+              <span>Wipe Test Data & Start Fresh</span>
+            </button>
           </div>
         </div>
 

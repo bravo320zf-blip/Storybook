@@ -27,18 +27,21 @@ import {
   loadStoredConfig,
   saveStoredConfig,
   calculateWritingStats,
+  clearAllStoredData,
 } from './services/storage';
 import {
   saveStoryToDrive,
   syncAllToGoogleDrive,
   syncIncrementalToGoogleDrive,
   exportStoryboardToDrive,
+  deleteInklingDriveFolder,
 } from './services/googleDrive';
 import {
   signInWithGoogle,
   signOutUser,
   subscribeToAuth,
   syncStoryToFirestore,
+  clearUserFirestoreData,
 } from './services/firebase';
 import { Story, Character, StoryboardData, WorldMap, UserConfig, CardKind } from './types';
 
@@ -382,6 +385,36 @@ export const App: React.FC = () => {
     reader.readAsText(file);
   };
 
+  // Complete wipe of test data from Google Drive, Firestore, and LocalStorage
+  const handleWipeAllData = async () => {
+    const confirmWipe = window.confirm(
+      `Are you sure you want to remove all test data from your Google Drive ("${config.googleDriveFolderName}") and reset your workspace? This will delete all sample stories, characters, and boards.`
+    );
+    if (!confirmWipe) return;
+
+    setDriveSyncing(true);
+    try {
+      if (config.googleAccessToken && config.googleAccessToken !== 'demo-token') {
+        await deleteInklingDriveFolder(config.googleAccessToken, config.googleDriveFolderName);
+      }
+
+      clearAllStoredData();
+      setStories([]);
+      setCharacters([]);
+      setStoryboard({ cards: [], links: [] });
+      setMaps([]);
+      setActiveStory(null);
+      setLastDriveSync(undefined);
+
+      alert('All test data has been deleted from your Google Drive and workspace. You now have a clean slate!');
+    } catch (err: any) {
+      console.error(err);
+      alert('Could not complete wipe: ' + (err.message || err));
+    } finally {
+      setDriveSyncing(false);
+    }
+  };
+
   // Keyboard shortcut for Command Palette (⌘K / Ctrl+K)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -539,6 +572,7 @@ export const App: React.FC = () => {
               syncing: driveSyncing,
               lastSynced: lastDriveSync,
             }}
+            onWipeAllData={handleWipeAllData}
           />
         ) : (
           <div className="page-content">

@@ -494,3 +494,31 @@ export async function syncIncrementalToGoogleDrive(
     syncedAt: Date.now(),
   };
 }
+
+/**
+ * Completely removes the Inkling Stories folder and all files inside from user's Google Drive
+ */
+export async function deleteInklingDriveFolder(accessToken: string, folderName: string = 'Inkling Stories'): Promise<boolean> {
+  const cacheKey = `ink_drive_folder_id_${folderName}`;
+  const query = `name = '${folderName}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
+  try {
+    const res = await fetch(`${DRIVE_API_URL}/files?q=${encodeURIComponent(query)}&fields=files(id, name)`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.files && data.files.length > 0) {
+        for (const folder of data.files) {
+          await fetch(`${DRIVE_API_URL}/files/${folder.id}`, {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${accessToken}` },
+          });
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Failed to delete Google Drive folder:', err);
+  }
+  localStorage.removeItem(cacheKey);
+  return true;
+}
