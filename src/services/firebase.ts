@@ -1,0 +1,152 @@
+import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
+import {
+  getAuth,
+  GoogleAuthProvider,
+  signInWithPopup,
+  signOut as fbSignOut,
+  onAuthStateChanged,
+  User,
+  Auth,
+} from 'firebase/auth';
+import {
+  getFirestore,
+  collection,
+  doc,
+  setDoc,
+  getDocs,
+  getDoc,
+  deleteDoc,
+  Firestore,
+} from 'firebase/firestore';
+import { Story, Character, StoryboardData, WorldMap, UserConfig } from '../types';
+
+// Default configuration from environment or fallback
+const defaultFirebaseConfig = {
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || '',
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || '',
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || '',
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || '',
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || '',
+};
+
+let app: FirebaseApp | null = null;
+let auth: Auth | null = null;
+let db: Firestore | null = null;
+
+export function initFirebase(customConfig?: Partial<typeof defaultFirebaseConfig>) {
+  const config = {
+    apiKey: customConfig?.apiKey || defaultFirebaseConfig.apiKey,
+    authDomain: customConfig?.authDomain || defaultFirebaseConfig.authDomain,
+    projectId: customConfig?.projectId || defaultFirebaseConfig.projectId,
+    storageBucket: customConfig?.storageBucket || defaultFirebaseConfig.storageBucket,
+    messagingSenderId: customConfig?.messagingSenderId || defaultFirebaseConfig.messagingSenderId,
+    appId: customConfig?.appId || defaultFirebaseConfig.appId,
+  };
+
+  if (!config.apiKey || !config.projectId) {
+    return null;
+  }
+
+  try {
+    if (!getApps().length) {
+      app = initializeApp(config);
+    } else {
+      app = getApp();
+    }
+    auth = getAuth(app);
+    db = getFirestore(app);
+    return { app, auth, db };
+  } catch (err) {
+    console.warn('Firebase initialization note:', err);
+    return null;
+  }
+}
+
+// Auto-initialize if env vars are present
+initFirebase();
+
+export const googleProvider = new GoogleAuthProvider();
+// Request Google Drive file scope for storing manuscripts
+googleProvider.addScope('https://www.googleapis.com/auth/drive.file');
+googleProvider.addScope('https://www.googleapis.com/auth/userinfo.profile');
+googleProvider.addScope('https://www.googleapis.com/auth/userinfo.email');
+googleProvider.setCustomParameters({
+  prompt: 'consent',
+  access_type: 'offline',
+});
+
+/**
+ * Signs in with Google via Firebase Auth and retrieves Google Drive Access Token
+ */
+export async function signInWithGoogle(): Promise<{ user: User; accessToken?: string }> {
+  if (!auth) {
+    throw new Error('Firebase Auth is not configured yet. Please configure Firebase in Setup.');
+  }
+
+  const result = await signInWithPopup(auth, googleProvider);
+  const credential = GoogleAuthProvider.credentialFromResult(result);
+  const accessToken = credential?.accessToken;
+
+  return {
+    user: result.user,
+    accessToken,
+  };
+}
+
+export async function signOutUser(): Promise<void> {
+  if (auth) {
+    await fbSignOut(auth);
+  }
+}
+
+export function subscribeToAuth(callback: (user: User | null) => void) {
+  if (!auth) {
+    callback(null);
+    return () => {};
+  }
+  return onAuthStateChanged(auth, callback);
+}
+
+// Firestore persistence helpers
+export async function syncStoryToFirestore(userId: string, story: Story): Promise<void> {
+  if (!db) return;
+  const ref = doc(db, `users/${userId}/stories`, story.id);
+  await setDoc(ref, story, { merge: true });
+}
+
+export async function loadStoriesFromFirestore(userId: string): Promise<Story[]> {
+  if (!db) return [];
+  const col = collection(db, `users/${userId}/stories`);
+  const snapshot = await getDocs(col);
+  return snapshot.docs.map((d) => d.data() as Story);
+}
+
+export async function deleteStoryFromFirestore(userId: string, storyId: string): Promise<void> {
+  if (!db) return;
+  const ref = doc(db, `users/${userId}/stories`, storyId);
+  await deleteDoc(ref);
+}
+
+export async function saveUserDataToFirestore(
+  userId: string,
+  data: {
+    characters?: Character[];
+    storyboards?: Record<string, StoryboardData>;
+    maps?: WorldMap[];
+  }
+): Promise<void> {
+  if (!db) return;
+  const ref = doc(db, `users/${userId}/workspace`, 'data');
+  await setDoc(ref, data, { merge: true });
+}
+
+export async function loadUserDataFromFirestore(userId: string) {
+  if (!db) return null;
+  const ref = doc(db, `users/${userId}/workspace`, 'data');
+  const snap = await getDoc(ref);
+  if (snap.exists()) {
+    return snap.data();
+  }
+  return null;
+}
