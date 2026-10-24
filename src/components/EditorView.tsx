@@ -14,6 +14,7 @@ import {
   Maximize2,
   Minimize2,
   FolderSync,
+  Trash2,
 } from 'lucide-react';
 import { Story, Character, StoryboardData, WorldMap } from '../types';
 import { MapStampIcon } from '../utils/mapStamps';
@@ -26,6 +27,7 @@ interface EditorViewProps {
   onBack: () => void;
   onUpdateStory: (updatedStory: Story) => void;
   onSaveToDrive: (story: Story) => Promise<void>;
+  onDeleteStory: (storyId: string) => void;
   driveFolderName: string;
 }
 
@@ -37,6 +39,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
   onBack,
   onUpdateStory,
   onSaveToDrive,
+  onDeleteStory,
   driveFolderName,
 }) => {
   const [title, setTitle] = useState(story.title);
@@ -192,6 +195,32 @@ export const EditorView: React.FC<EditorViewProps> = ({
               title="Download Markdown file"
             >
               <Download size={16} />
+            </button>
+
+            {/* Delete Story */}
+            <button
+              className="icon-btn"
+              onClick={() => {
+                if (
+                  window.confirm(
+                    `Are you sure you want to delete "${title || 'Untitled Story'}"? This will permanently remove it from your workspace and Google Drive.`
+                  )
+                ) {
+                  onDeleteStory(story.id);
+                }
+              }}
+              title="Delete this story"
+              style={{ color: 'var(--muted)' }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.color = '#e53e3e';
+                e.currentTarget.style.backgroundColor = 'rgba(229, 62, 62, 0.08)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.color = 'var(--muted)';
+                e.currentTarget.style.backgroundColor = 'transparent';
+              }}
+            >
+              <Trash2 size={16} />
             </button>
 
             {/* Fullscreen toggle */}

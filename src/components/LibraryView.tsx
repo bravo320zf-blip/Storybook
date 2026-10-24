@@ -7,6 +7,7 @@ import {
   Upload,
   Download,
   FolderOpen,
+  Trash2,
 } from 'lucide-react';
 import { Story } from '../types';
 
@@ -14,6 +15,7 @@ interface LibraryViewProps {
   stories: Story[];
   onOpenStory: (story: Story) => void;
   onNewStory: () => void;
+  onDeleteStory: (storyId: string) => void;
   onImportDraft: () => void;
 }
 
@@ -21,6 +23,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
   stories,
   onOpenStory,
   onNewStory,
+  onDeleteStory,
   onImportDraft,
 }) => {
   const [shelfFilter, setShelfFilter] = useState<string>('all');
@@ -179,6 +182,32 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                 <span style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>
                   {s.words.toLocaleString()} words
                 </span>
+                <button
+                  className="icon-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (
+                      window.confirm(
+                        `Delete "${s.title}"? This will permanently remove this story from your studio and Google Drive.`
+                      )
+                    ) {
+                      onDeleteStory(s.id);
+                    }
+                  }}
+                  title="Delete manuscript"
+                  style={{
+                    padding: '4px',
+                    color: 'var(--muted)',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.color = '#e53e3e';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.color = 'var(--muted)';
+                  }}
+                >
+                  <Trash2 size={15} />
+                </button>
                 <ArrowRight size={16} style={{ color: 'var(--accent)' }} />
               </div>
             </div>

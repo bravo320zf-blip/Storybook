@@ -33,6 +33,8 @@ import {
   saveStoryToDrive,
   syncAllToGoogleDrive,
   syncIncrementalToGoogleDrive,
+  syncBiDirectionalWithGoogleDrive,
+  deleteDriveFile,
   exportStoryboardToDrive,
   deleteInklingDriveFolder,
 } from './services/googleDrive';
@@ -41,6 +43,7 @@ import {
   signOutUser,
   subscribeToAuth,
   syncStoryToFirestore,
+  deleteStoryFromFirestore,
   clearUserFirestoreData,
 } from './services/firebase';
 import { Story, Character, StoryboardData, WorldMap, UserConfig, CardKind } from './types';
@@ -75,7 +78,10 @@ export const App: React.FC = () => {
 
   // Cloud & Drive Sync State
   const [driveSyncing, setDriveSyncing] = useState(false);
-  const [lastDriveSync, setLastDriveSync] = useState<number | undefined>();
+  const [lastDriveSync, setLastDriveSync] = useState<number | undefined>(() => {
+    const saved = localStorage.getItem('ink_last_drive_sync');
+    return saved ? parseInt(saved, 10) : undefined;
+  });
 
   // Are there unsaved changes that need to be synced?
   const hasPendingChanges =
@@ -141,23 +147,13 @@ export const App: React.FC = () => {
   // Compute live writing statistics
   const stats = calculateWritingStats(stories);
 
-  // Intelligent 60-Second Auto-Sync (Performs a sync every minute, only updating changed items)
+  // Intelligent 60-Second Bi-Directional Auto-Sync
   useEffect(() => {
     const autoSyncTimer = setInterval(async () => {
-      const dirtyStories = stories.some((s) => s.edited > (s.gdriveLastSynced || 0));
-      const dirtyChars = charactersLastModified > charactersLastSynced;
-      const dirtyBoard = storyboardLastModified > storyboardLastSynced;
-      const dirtyMaps = mapsLastModified > mapsLastSynced;
-
-      if (!dirtyStories && !dirtyChars && !dirtyBoard && !dirtyMaps) {
-        // Nothing changed in the last minute! Skip network traffic.
-        return;
-      }
-
       if (config.googleAccessToken && config.googleAccessToken !== 'demo-token') {
         try {
           setDriveSyncing(true);
-          const res = await syncIncrementalToGoogleDrive(
+          const res = await syncBiDirectionalWithGoogleDrive(
             config.googleAccessToken,
             config.googleDriveFolderName,
             {
@@ -176,14 +172,14 @@ export const App: React.FC = () => {
             }
           );
 
-          if (res.syncedStoriesCount > 0) {
+          if (res.syncedStoriesCount > 0 || res.updatedStories.length !== stories.length) {
             setStories(res.updatedStories);
           }
           if (res.syncedCharacters) setCharactersLastSynced(Date.now());
           if (res.syncedStoryboard) setStoryboardLastSynced(Date.now());
           if (res.syncedMaps) setMapsLastSynced(Date.now());
-          setLastDriveSync(Date.now());
-          console.log(`Auto-synced: ${res.syncedStoriesCount} changed stories updated to Google Drive.`);
+          setLastDriveSync(res.syncedAt);
+          localStorage.setItem('ink_last_drive_sync', String(res.syncedAt));
         } catch (err: any) {
           console.warn('Auto-sync notice:', err);
         } finally {
@@ -251,12 +247,12 @@ export const App: React.FC = () => {
     }));
   };
 
-  // Manual Trigger Full Drive Sync
+  // Manual Trigger Two-Way Drive Sync
   const handleTriggerDriveSync = async () => {
     setDriveSyncing(true);
     try {
       if (config.googleAccessToken && config.googleAccessToken !== 'demo-token') {
-        const res = await syncIncrementalToGoogleDrive(
+        const res = await syncBiDirectionalWithGoogleDrive(
           config.googleAccessToken,
           config.googleDriveFolderName,
           {
@@ -276,10 +272,26 @@ export const App: React.FC = () => {
         );
         setStories(res.updatedStories);
         setLastDriveSync(res.syncedAt);
-        alert(`Synced ${res.syncedStoriesCount} modified stories and world documents to Google Drive folder "${config.googleDriveFolderName}"!`);
+        localStorage.setItem('ink_last_drive_sync', String(res.syncedAt));
+
+        const summaries: string[] = [];
+        if (res.importedCount > 0)
+          summaries.push(`📥 Imported ${res.importedCount} new Google Doc${res.importedCount > 1 ? 's' : ''}`);
+        if (res.updatedLocalCount > 0)
+          summaries.push(`🔄 Updated ${res.updatedLocalCount} local manuscript${res.updatedLocalCount > 1 ? 's' : ''} from Drive`);
+        if (res.updatedRemoteCount > 0)
+          summaries.push(`☁️ Uploaded ${res.updatedRemoteCount} manuscript${res.updatedRemoteCount > 1 ? 's' : ''} to Drive`);
+
+        const msg =
+          summaries.length > 0
+            ? summaries.join('\n') + `\n\nGoogle Drive Folder: "${config.googleDriveFolderName}"`
+            : `Everything is up to date with Google Drive folder "${config.googleDriveFolderName}"!`;
+        alert(`Google Drive Two-Way Sync Complete:\n\n${msg}`);
       } else {
-        await new Promise((r) => setTimeout(r, 1000));
-        setLastDriveSync(Date.now());
+        await new Promise((r) => setTimeout(r, 600));
+        const now = Date.now();
+        setLastDriveSync(now);
+        localStorage.setItem('ink_last_drive_sync', String(now));
         alert(`Synced to Google Drive ("${config.googleDriveFolderName}")!`);
       }
     } catch (e: any) {
@@ -326,6 +338,38 @@ export const App: React.FC = () => {
     setStories((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
     if (activeStory?.id === updated.id) {
       setActiveStory(updated);
+    }
+  };
+
+  const handleDeleteStory = async (storyId: string) => {
+    const storyToDelete = stories.find((s) => s.id === storyId);
+    if (!storyToDelete) return;
+
+    // 1. Remove from local state
+    setStories((prev) => prev.filter((s) => s.id !== storyId));
+    if (activeStory?.id === storyId) {
+      setActiveStory(null);
+      setCurrentView('dashboard');
+    }
+
+    // 2. Delete from Google Drive if synced
+    if (storyToDelete.gdriveFileId && config.googleAccessToken && config.googleAccessToken !== 'demo-token') {
+      try {
+        await deleteDriveFile(config.googleAccessToken, storyToDelete.gdriveFileId);
+        console.log(`Deleted story file from Google Drive: ${storyToDelete.gdriveFileId}`);
+      } catch (err) {
+        console.warn('Failed to delete story from Google Drive:', err);
+      }
+    }
+
+    // 3. Delete from Firebase Firestore if signed in
+    if (config.googleUserEmail) {
+      try {
+        await deleteStoryFromFirestore(config.googleUserEmail, storyId);
+        console.log(`Deleted story ${storyId} from Firestore.`);
+      } catch (err) {
+        console.warn('Failed to delete story from Firestore:', err);
+      }
     }
   };
 
@@ -469,6 +513,7 @@ export const App: React.FC = () => {
             onImportDraft={() => setIsImportOpen(true)}
             onOpenAuth={() => setIsAuthOpen(true)}
             userEmail={config.googleUserEmail}
+            onTriggerDriveSync={handleTriggerDriveSync}
             syncStatus={{
               syncing: driveSyncing,
               lastSynced: lastDriveSync,
@@ -487,6 +532,7 @@ export const App: React.FC = () => {
             onBack={() => setActiveStory(null)}
             onUpdateStory={handleUpdateStory}
             onSaveToDrive={handleSaveStoryToDrive}
+            onDeleteStory={handleDeleteStory}
             driveFolderName={config.googleDriveFolderName}
           />
         ) : currentView === 'dashboard' ? (
@@ -497,6 +543,7 @@ export const App: React.FC = () => {
             stats={stats}
             onOpenStory={(story) => setActiveStory(story)}
             onNewStory={() => handleCreateNewStory()}
+            onDeleteStory={handleDeleteStory}
             driveSyncStatus={{
               folderName: config.googleDriveFolderName,
               syncing: driveSyncing,
@@ -509,6 +556,7 @@ export const App: React.FC = () => {
             stories={stories}
             onOpenStory={(story) => setActiveStory(story)}
             onNewStory={() => handleCreateNewStory()}
+            onDeleteStory={handleDeleteStory}
             onImportDraft={() => setIsImportOpen(true)}
           />
         ) : currentView === 'storyboard' ? (

@@ -1,4 +1,4 @@
-import { Story, StoryboardData, Character, WorldMap } from '../types';
+import { Story, StoryStatus, StoryboardData, Character, WorldMap } from '../types';
 
 const DRIVE_API_URL = 'https://www.googleapis.com/drive/v3';
 const UPLOAD_API_URL = 'https://www.googleapis.com/upload/drive/v3';
@@ -399,9 +399,125 @@ export async function syncAllToGoogleDrive(
 }
 
 /**
- * Intelligent incremental sync: ONLY syncs stories, characters, boards, or maps that have actually changed!
+ * Deletes a file from Google Drive by file ID
  */
-export async function syncIncrementalToGoogleDrive(
+export async function deleteDriveFile(accessToken: string, fileId: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${DRIVE_API_URL}/files/${fileId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    return res.ok || res.status === 404;
+  } catch (err) {
+    console.error('Failed to delete Google Drive file:', err);
+    return false;
+  }
+}
+
+/**
+ * Fetches content of a file from Google Drive.
+ * Automatically handles Google Docs export as text/plain, or raw text/media for .md / .txt files.
+ */
+export async function fetchDriveFileContent(accessToken: string, fileId: string, mimeType: string): Promise<string> {
+  let url = `${DRIVE_API_URL}/files/${fileId}?alt=media`;
+  if (mimeType === 'application/vnd.google-apps.document') {
+    url = `${DRIVE_API_URL}/files/${fileId}/export?mimeType=text/plain`;
+  }
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) {
+    console.warn(`Failed to fetch Drive file content for ${fileId} (${res.status})`);
+    return '';
+  }
+  return await res.text();
+}
+
+function escapeRegExp(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Parses markdown frontmatter or plain text / doc text into a structured Story object
+ */
+export function parseStoryFile(
+  content: string,
+  fileName: string
+): {
+  title: string;
+  id?: string;
+  status?: StoryStatus;
+  summary?: string;
+  body: string;
+} {
+  const cleanTitle = fileName.replace(/\.(md|txt|markdown|doc|docx)$/i, '').trim();
+
+  if (content.startsWith('---')) {
+    const endMatch = content.indexOf('---', 3);
+    if (endMatch !== -1) {
+      const frontmatter = content.slice(3, endMatch);
+      let body = content.slice(endMatch + 3).trim();
+
+      let title = cleanTitle;
+      let id: string | undefined;
+      let status: StoryStatus | undefined;
+      let summary: string | undefined;
+
+      const titleMatch = frontmatter.match(/title:\s*["']?([^"'\n\r]+)["']?/i);
+      if (titleMatch) title = titleMatch[1].trim();
+
+      const idMatch = frontmatter.match(/id:\s*["']?([^"'\n\r]+)["']?/i);
+      if (idMatch) id = idMatch[1].trim();
+
+      const statusMatch = frontmatter.match(/status:\s*["']?([^"'\n\r]+)["']?/i);
+      if (
+        statusMatch &&
+        ['drafting', 'stuck', 'needs-ending', 'resting', 'finished'].includes(statusMatch[1].trim())
+      ) {
+        status = statusMatch[1].trim() as StoryStatus;
+      }
+
+      const summaryMatch = frontmatter.match(/summary:\s*["']?([^"'\n\r]+)["']?/i);
+      if (summaryMatch) summary = summaryMatch[1].trim();
+
+      // If body starts with "# Title", strip redundant heading
+      if (body.startsWith(`# ${title}`)) {
+        body = body.replace(new RegExp(`^#\\s*${escapeRegExp(title)}\\s*\\r?\\n*`, 'i'), '').trim();
+      }
+
+      return { title: title || cleanTitle, id, status, summary, body };
+    }
+  }
+
+  // Not frontmatter - regular Google Doc or plain text file
+  let body = content.trim();
+  let title = cleanTitle;
+
+  const h1Match = body.match(/^#\s+([^\n\r]+)\r?\n+/);
+  if (h1Match) {
+    if (!title || title.toLowerCase() === 'untitled' || title.toLowerCase() === 'untitled document') {
+      title = h1Match[1].trim();
+    }
+    body = body.slice(h1Match[0].length).trim();
+  }
+
+  return {
+    title: title || 'Untitled Story',
+    status: 'drafting',
+    body,
+  };
+}
+
+/**
+ * Bi-directional Intelligent Google Drive Sync:
+ * 1. Checks Google Drive folder for any files created or modified directly on Drive.
+ *    - If new Google Doc or markdown file on Drive: imports it as a new Story in the App!
+ *    - If file on Drive was edited more recently than in App: updates the Story in the App!
+ * 2. Checks local stories in the App:
+ *    - If created or edited in App: uploads/updates in Google Drive!
+ * 3. Checks characters, storyboards, and maps for changes and syncs them.
+ */
+export async function syncBiDirectionalWithGoogleDrive(
   accessToken: string,
   folderName: string,
   data: {
@@ -420,6 +536,9 @@ export async function syncIncrementalToGoogleDrive(
   }
 ): Promise<{
   folderId: string;
+  importedCount: number;
+  updatedRemoteCount: number;
+  updatedLocalCount: number;
   syncedStoriesCount: number;
   syncedCharacters: boolean;
   syncedStoryboard: boolean;
@@ -428,26 +547,149 @@ export async function syncIncrementalToGoogleDrive(
   syncedAt: number;
 }> {
   const folderId = await getOrCreateFolder(accessToken, folderName);
-  let syncedStoriesCount = 0;
-  const updatedStories: Story[] = [];
 
-  for (const story of data.stories) {
-    const isDirty = story.edited > (story.gdriveLastSynced || 0);
-    if (isDirty) {
-      try {
-        const fileId = await saveStoryToDrive(accessToken, folderId, story);
-        updatedStories.push({
-          ...story,
-          gdriveFileId: fileId,
-          gdriveLastSynced: Date.now(),
-        });
-        syncedStoriesCount++;
-      } catch (err) {
-        console.error(`Failed to incremental sync story "${story.title}":`, err);
-        updatedStories.push(story);
+  // 1. Fetch remote files in the Google Drive folder
+  const query = `'${folderId}' in parents and trashed = false`;
+  const listRes = await fetch(
+    `${DRIVE_API_URL}/files?q=${encodeURIComponent(query)}&fields=files(id, name, mimeType, modifiedTime, createdTime)&pageSize=100`,
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    }
+  );
+
+  let remoteFiles: DriveFileItem[] = [];
+  if (listRes.ok) {
+    const listData = await listRes.json();
+    remoteFiles = listData.files || [];
+  }
+
+  const SYSTEM_NAMES = new Set([
+    'characters.json',
+    'storyboards.json',
+    'maps.json',
+    'inkling_full_backup.json',
+  ]);
+
+  // Filter out system config and storyboard outline exports
+  const candidateStoryFiles = remoteFiles.filter((f) => {
+    if (SYSTEM_NAMES.has(f.name)) return false;
+    if (f.name.endsWith(' - Storyboard Outline.md')) return false;
+    if (f.mimeType === 'application/vnd.google-apps.folder') return false;
+    return true;
+  });
+
+  const updatedStories: Story[] = [...data.stories];
+  let importedCount = 0;
+  let updatedRemoteCount = 0;
+  let updatedLocalCount = 0;
+
+  // Process remote files from Drive -> App
+  for (const rFile of candidateStoryFiles) {
+    const cleanRemoteTitle = rFile.name.replace(/\.(md|txt|markdown|doc|docx)$/i, '').trim();
+
+    // Match by Google Drive File ID first, or by title
+    let matchIdx = updatedStories.findIndex((s) => s.gdriveFileId === rFile.id);
+    if (matchIdx === -1) {
+      matchIdx = updatedStories.findIndex(
+        (s) => s.title.trim().toLowerCase() === cleanRemoteTitle.toLowerCase()
+      );
+    }
+
+    const remoteModified = rFile.modifiedTime ? new Date(rFile.modifiedTime).getTime() : 0;
+
+    if (matchIdx !== -1) {
+      // Story exists in both Drive and local app
+      const localStory = updatedStories[matchIdx];
+      // Jitter tolerance: 3 seconds
+      if (remoteModified > (localStory.edited || 0) + 3000) {
+        // REMOTE IS NEWER: fetch from Google Drive and update local story
+        try {
+          const content = await fetchDriveFileContent(accessToken, rFile.id, rFile.mimeType);
+          const parsed = parseStoryFile(content, rFile.name);
+          const updated: Story = {
+            ...localStory,
+            title: parsed.title || cleanRemoteTitle,
+            body: parsed.body,
+            words: (parsed.body.match(/\S+/g) || []).length,
+            edited: remoteModified,
+            gdriveFileId: rFile.id,
+            gdriveLastSynced: remoteModified,
+            ...(parsed.status ? { status: parsed.status } : {}),
+            ...(parsed.summary ? { summary: parsed.summary } : {}),
+          };
+          updatedStories[matchIdx] = updated;
+          updatedLocalCount++;
+        } catch (e) {
+          console.error(`Error updating local story from Drive (${rFile.name}):`, e);
+        }
+      } else if ((localStory.edited || 0) > (localStory.gdriveLastSynced || 0)) {
+        // LOCAL IS NEWER: upload local changes to Drive
+        try {
+          const fileId = await saveStoryToDrive(accessToken, folderId, localStory);
+          updatedStories[matchIdx] = {
+            ...localStory,
+            gdriveFileId: fileId,
+            gdriveLastSynced: Date.now(),
+          };
+          updatedRemoteCount++;
+        } catch (e) {
+          console.error(`Error updating remote story in Drive (${localStory.title}):`, e);
+        }
+      } else {
+        // Make sure file ID is linked if missing
+        if (!localStory.gdriveFileId) {
+          updatedStories[matchIdx] = {
+            ...localStory,
+            gdriveFileId: rFile.id,
+            gdriveLastSynced: remoteModified || Date.now(),
+          };
+        }
       }
     } else {
-      updatedStories.push(story);
+      // NEW FILE FOUND ON GOOGLE DRIVE! Import it as a new Story in Inkling
+      try {
+        const content = await fetchDriveFileContent(accessToken, rFile.id, rFile.mimeType);
+        const parsed = parseStoryFile(content, rFile.name);
+        const newStory: Story = {
+          id: parsed.id || `story-gdrive-${rFile.id}`,
+          title: parsed.title || cleanRemoteTitle || 'Untitled Story from Drive',
+          status: parsed.status || 'drafting',
+          words: (parsed.body.match(/\S+/g) || []).length,
+          edited: remoteModified || Date.now(),
+          body: parsed.body,
+          summary:
+            parsed.summary ||
+            (parsed.body
+              ? parsed.body.slice(0, 140).trim().replace(/\n/g, ' ') + '…'
+              : 'Imported from Google Drive.'),
+          gdriveFileId: rFile.id,
+          gdriveLastSynced: remoteModified || Date.now(),
+        };
+        updatedStories.unshift(newStory);
+        importedCount++;
+      } catch (e) {
+        console.error(`Error importing new file from Drive (${rFile.name}):`, e);
+      }
+    }
+  }
+
+  // Process local stories that haven't been synced to Drive yet -> Drive
+  for (let i = 0; i < updatedStories.length; i++) {
+    const s = updatedStories[i];
+    const isDirty = (s.edited || 0) > (s.gdriveLastSynced || 0);
+    const hasNoDriveId = !s.gdriveFileId;
+    if (isDirty || hasNoDriveId) {
+      try {
+        const fileId = await saveStoryToDrive(accessToken, folderId, s);
+        updatedStories[i] = {
+          ...s,
+          gdriveFileId: fileId,
+          gdriveLastSynced: Date.now(),
+        };
+        updatedRemoteCount++;
+      } catch (err) {
+        console.error(`Failed to upload local story "${s.title}" to Drive:`, err);
+      }
     }
   }
 
@@ -458,7 +700,7 @@ export async function syncIncrementalToGoogleDrive(
       await saveJsonToDrive(accessToken, folderId, 'characters.json', data.characters);
       syncedCharacters = true;
     } catch (e) {
-      console.error('Incremental sync characters failed:', e);
+      console.error('Bi-directional sync characters failed:', e);
     }
   }
 
@@ -469,7 +711,7 @@ export async function syncIncrementalToGoogleDrive(
       await saveJsonToDrive(accessToken, folderId, 'storyboards.json', data.storyboards);
       syncedStoryboard = true;
     } catch (e) {
-      console.error('Incremental sync storyboard failed:', e);
+      console.error('Bi-directional sync storyboard failed:', e);
     }
   }
 
@@ -480,19 +722,46 @@ export async function syncIncrementalToGoogleDrive(
       await saveJsonToDrive(accessToken, folderId, 'maps.json', data.maps);
       syncedMaps = true;
     } catch (e) {
-      console.error('Incremental sync maps failed:', e);
+      console.error('Bi-directional sync maps failed:', e);
     }
   }
 
   return {
     folderId,
-    syncedStoriesCount,
+    importedCount,
+    updatedRemoteCount,
+    updatedLocalCount,
+    syncedStoriesCount: importedCount + updatedRemoteCount + updatedLocalCount,
     syncedCharacters,
     syncedStoryboard,
     syncedMaps,
     updatedStories,
     syncedAt: Date.now(),
   };
+}
+
+/**
+ * Intelligent incremental sync: delegates to full bi-directional sync
+ */
+export async function syncIncrementalToGoogleDrive(
+  accessToken: string,
+  folderName: string,
+  data: {
+    stories: Story[];
+    characters: Character[];
+    storyboards: Record<string, StoryboardData>;
+    maps: WorldMap[];
+  },
+  lastModifiedState: {
+    charactersLastModified: number;
+    charactersLastSynced: number;
+    storyboardLastModified: number;
+    storyboardLastSynced: number;
+    mapsLastModified: number;
+    mapsLastSynced: number;
+  }
+) {
+  return await syncBiDirectionalWithGoogleDrive(accessToken, folderName, data, lastModifiedState);
 }
 
 /**
@@ -522,3 +791,4 @@ export async function deleteInklingDriveFolder(accessToken: string, folderName: 
   localStorage.removeItem(cacheKey);
   return true;
 }
+

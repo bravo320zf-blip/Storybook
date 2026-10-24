@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ArrowRight, Flame, Cloud, RefreshCw, FolderSync } from 'lucide-react';
+import { ArrowRight, Flame, Cloud, RefreshCw, FolderSync, Trash2 } from 'lucide-react';
 import { Story, StoryStatus, WritingStats } from '../types';
 import { StoryCoverSvg } from '../utils/coverGenerator';
 
@@ -8,6 +8,7 @@ interface DashboardViewProps {
   stats: WritingStats;
   onOpenStory: (story: Story) => void;
   onNewStory: () => void;
+  onDeleteStory: (storyId: string) => void;
   driveSyncStatus: {
     folderName: string;
     syncing: boolean;
@@ -38,6 +39,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   stories,
   stats,
   onOpenStory,
+  onNewStory,
+  onDeleteStory,
   driveSyncStatus,
   onTriggerDriveSync,
 }) => {
@@ -169,13 +172,47 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   <span>
                     {(story.words || 0).toLocaleString()} words · {formatTimeAgo(story.edited)}
                   </span>
-                  <button
-                    className="jump-in-btn"
-                    onClick={() => onOpenStory(story)}
-                  >
-                    <span>Jump back in</span>
-                    <ArrowRight size={14} />
-                  </button>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <button
+                      className="icon-btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (
+                          window.confirm(
+                            `Delete "${story.title}"? This will permanently remove this story from your studio and Google Drive.`
+                          )
+                        ) {
+                          onDeleteStory(story.id);
+                        }
+                      }}
+                      title="Delete story"
+                      style={{
+                        padding: '5px',
+                        color: 'var(--muted)',
+                        borderRadius: '6px',
+                        border: '1px solid transparent',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.color = '#e53e3e';
+                        e.currentTarget.style.borderColor = 'rgba(229, 62, 62, 0.3)';
+                        e.currentTarget.style.backgroundColor = 'rgba(229, 62, 62, 0.08)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.color = 'var(--muted)';
+                        e.currentTarget.style.borderColor = 'transparent';
+                        e.currentTarget.style.backgroundColor = 'transparent';
+                      }}
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                    <button
+                      className="jump-in-btn"
+                      onClick={() => onOpenStory(story)}
+                    >
+                      <span>Jump back in</span>
+                      <ArrowRight size={14} />
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>

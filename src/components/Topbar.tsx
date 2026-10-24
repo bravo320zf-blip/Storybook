@@ -35,6 +35,7 @@ interface TopbarProps {
   onImportDraft: () => void;
   onOpenAuth: () => void;
   userEmail?: string;
+  onTriggerDriveSync?: () => void;
   syncStatus: {
     syncing: boolean;
     lastSynced?: number;
@@ -58,9 +59,18 @@ export const Topbar: React.FC<TopbarProps> = ({
   onImportDraft,
   onOpenAuth,
   userEmail,
+  onTriggerDriveSync,
   syncStatus,
 }) => {
   const [menuOpen, setMenuOpen] = useState(false);
+
+  const formatSyncDateTime = (timestamp?: number): string => {
+    if (!timestamp) return 'Not synced yet';
+    const date = new Date(timestamp);
+    const dateStr = date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    const timeStr = date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+    return `${dateStr}, ${timeStr}`;
+  };
 
   return (
     <header className="topbar">
@@ -97,48 +107,59 @@ export const Topbar: React.FC<TopbarProps> = ({
         <span>Sprint</span>
       </button>
 
-      {/* Incremental Auto-Sync Indicator (Syncs every minute) */}
-      <div
+      {/* Help Tips */}
+      <button className="icon-btn" onClick={onOpenHelp} title="Tips & features guide">
+        <HelpCircle size={16} />
+      </button>
+
+      {/* Google Drive Last Synced Indicator (Next to Help button) */}
+      <button
+        onClick={onTriggerDriveSync}
         style={{
           display: 'flex',
           alignItems: 'center',
-          gap: '6px',
+          gap: '7px',
           fontSize: '0.78rem',
-          padding: '4px 10px',
+          padding: '4px 11px',
           borderRadius: '16px',
-          background: 'var(--bg)',
+          background: 'var(--panel)',
           border: '1px solid var(--line)',
-          color: 'var(--muted)',
+          color: syncStatus.syncing ? 'var(--warn)' : syncStatus.lastSynced ? 'var(--ink)' : 'var(--muted)',
+          cursor: onTriggerDriveSync ? 'pointer' : 'default',
+          transition: 'all 0.15s ease',
+          boxShadow: 'var(--shadow-sm)',
         }}
         title={
           syncStatus.syncing
-            ? 'Syncing changes to Google Drive and Firebase...'
-            : syncStatus.pendingChanges
-            ? 'Changes pending (Auto-syncs every 60s)'
-            : 'All changes synced to cloud'
+            ? 'Syncing with Google Drive...'
+            : syncStatus.lastSynced
+            ? `Google Drive last synced on ${formatSyncDateTime(syncStatus.lastSynced)}. Click to trigger instant two-way sync.`
+            : 'Not synced to Google Drive yet. Click to sync now.'
         }
       >
         {syncStatus.syncing ? (
           <>
             <RefreshCw size={12} className="animate-spin text-warn" />
-            <span>Syncing…</span>
-          </>
-        ) : syncStatus.pendingChanges ? (
-          <>
-            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--warn)' }} />
-            <span>Pending sync</span>
+            <span>Syncing to Drive…</span>
           </>
         ) : (
           <>
-            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--good)' }} />
-            <span>Synced</span>
+            <Cloud
+              size={13}
+              style={{ color: syncStatus.lastSynced ? '#4285F4' : 'var(--muted)' }}
+            />
+            <span style={{ fontWeight: 500 }}>
+              {syncStatus.lastSynced ? (
+                <>
+                  <span style={{ color: 'var(--muted)', marginRight: '3px' }}>Drive:</span>
+                  <span>{formatSyncDateTime(syncStatus.lastSynced)}</span>
+                </>
+              ) : (
+                'Drive: Not synced yet'
+              )}
+            </span>
           </>
         )}
-      </div>
-
-      {/* Help Tips */}
-      <button className="icon-btn" onClick={onOpenHelp} title="Tips & features guide">
-        <HelpCircle size={16} />
       </button>
 
       <div style={{ flex: 1 }} />
