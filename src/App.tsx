@@ -48,7 +48,7 @@ import {
   deleteStoryFromFirestore,
   clearUserFirestoreData,
 } from './services/firebase';
-import { Story, Character, StoryboardData, WorldMap, UserConfig, CardKind } from './types';
+import { Story, Character, StoryboardData, WorldMap, UserConfig, CardKind, MapStamp } from './types';
 
 export const App: React.FC = () => {
   // App Core State
@@ -723,7 +723,57 @@ export const App: React.FC = () => {
             onSyncDrive={handleTriggerDriveSync}
           />
         ) : currentView === 'muse' ? (
-          <MuseView onAddCardToStoryboard={handleAddCardToStoryboard} />
+          <MuseView
+            onAddCardToStoryboard={handleAddCardToStoryboard}
+            onAddCharacter={(char) => {
+              const newChar: Character = {
+                id: `char-${Date.now()}`,
+                name: char.name || 'Unnamed Character',
+                role: (char.role as any) || 'supporting',
+                archetype: char.archetype || '',
+                tagline: char.tagline || '',
+                avatarColor: char.avatarColor || '#B0567A',
+                traits: char.traits || [],
+                wound: char.wound || '',
+                fear: char.fear || '',
+                lie: char.lie || '',
+                want: char.want || '',
+                motivation: char.motivation || '',
+                need: char.need || '',
+                arc: char.arc || '',
+                notes: char.notes || '',
+                created: Date.now(),
+                entityKind: char.entityKind || 'character',
+                sheetSystem: char.sheetSystem || 'narrative',
+              };
+              setCharacters((prev) => [...prev, newChar]);
+              setCharactersLastModified(Date.now());
+              setSelectedCharacterId(newChar.id);
+            }}
+            onAddStampToMap={(stamp) => {
+              const targetMapId = activeMapId || maps[0]?.id;
+              if (!targetMapId) return;
+              const newStamp: MapStamp = {
+                id: `stamp-${Date.now()}`,
+                type: stamp.type || 'ruins',
+                label: stamp.label || 'New Landmark',
+                scale: 1.0,
+                x: 400 + Math.round(Math.random() * 200 - 100),
+                y: 300 + Math.round(Math.random() * 200 - 100),
+              };
+              setMaps((prev) =>
+                prev.map((m) =>
+                  m.id === targetMapId
+                    ? { ...m, stamps: [...(m.stamps || []), newStamp], updatedAt: Date.now() }
+                    : m
+                )
+              );
+              setMapsLastModified(Date.now());
+            }}
+            onNavigate={(view) => setCurrentView(view)}
+            config={config}
+            onUpdateConfig={(cfg) => setConfig(cfg)}
+          />
         ) : currentView === 'art' ? (
           <ArtBoardView
             stories={stories}
