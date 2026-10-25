@@ -156,7 +156,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <div key={story.id} className="story-card">
               {/* Procedural Landscape Cover */}
               <div className="story-cover-area">
-                <StoryCoverSvg seed={story.title + story.id} palette={palette} />
+                <StoryCoverSvg
+                  seed={story.title + story.id}
+                  coverData={story.cover}
+                  title={story.title}
+                  palette={palette}
+                />
                 <span className={`status-badge ${story.status}`}>{story.status}</span>
               </div>
 
