@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="./icon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Inkling · Studio, Worldbuilding & Google Drive Sync</title>
+    <meta name="description" content="All-in-one novel writing app: outline on a storyboard, build characters, map your world, and sync seamlessly to Google Drive and Firebase." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;600&family=Cinzel:wght@500;600;700&family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=Courier+Prime:ital,wght@0,400;0,700;1,400&family=Josefin+Sans:ital,wght@0,400;0,600;1,400&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <script>
+      (function(){
+        try {
+          var m = localStorage.getItem("ink_mode");
+          var d = m === "dark" || (!m && window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
+          var h = document.documentElement;
+          h.dataset.mode = d ? "dark" : "light";
+          h.style.colorScheme = d ? "dark" : "only light";
+        } catch(e) {}
+      })();
+    </script>
+    <script type="module" crossorigin src="./assets/index-49AHAkc7.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-CiPgVrC4.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>
