@@ -18,6 +18,7 @@ import {
   RefreshCw,
   LogOut,
   FolderSync,
+  X,
 } from 'lucide-react';
 import { UserConfig } from '../types';
 
@@ -33,6 +34,8 @@ interface SidebarProps {
   onTriggerDriveSync: () => void;
   onSignOut?: () => void;
   userEmail?: string;
+  isOpenMobile?: boolean;
+  onCloseMobile?: () => void;
 }
 
 interface NavItem {
@@ -54,6 +57,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onTriggerDriveSync,
   onSignOut,
   userEmail,
+  isOpenMobile,
+  onCloseMobile,
 }) => {
   const navSections: NavGroup[] = [
     {
@@ -85,12 +90,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
   ];
 
   return (
-    <aside className="app-sidebar">
+    <aside className={`app-sidebar ${isOpenMobile ? 'mobile-open' : ''}`}>
       {/* Brand Header */}
       <div className="brand-header">
         <BrandLogo size={28} />
         <span className="brand-title">Storyboard</span>
         <span className="brand-badge">Studio</span>
+        {onCloseMobile && (
+          <button
+            className="icon-btn mobile-close-sidebar-btn"
+            onClick={onCloseMobile}
+            title="Close navigation"
+          >
+            <X size={18} />
+          </button>
+        )}
       </div>
 
       {/* Navigation Groups */}
@@ -105,7 +119,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <button
                   key={item.id}
                   className={`nav-item ${isActive ? 'active' : ''}`}
-                  onClick={() => onNavigate(item.id)}
+                  onClick={() => {
+                    onNavigate(item.id);
+                    onCloseMobile?.();
+                  }}
                 >
                   <span
                     className="nav-icon"
@@ -170,7 +187,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         <button
           className={`nav-item ${currentView === 'setup' ? 'active' : ''}`}
-          onClick={() => onNavigate('setup')}
+          onClick={() => {
+            onNavigate('setup');
+            onCloseMobile?.();
+          }}
         >
           <span className="nav-icon">
             <Settings size={16} />

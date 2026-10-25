@@ -75,6 +75,7 @@ export const App: React.FC = () => {
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
 
   // Cloud & Drive Sync State
   const [driveSyncing, setDriveSyncing] = useState(false);
@@ -473,12 +474,21 @@ export const App: React.FC = () => {
 
   return (
     <div className="app-container">
+      {/* Mobile Sidebar Backdrop */}
+      {isMobileNavOpen && (
+        <div
+          className="sidebar-backdrop"
+          onClick={() => setIsMobileNavOpen(false)}
+        />
+      )}
+
       {/* Sidebar Navigation */}
       <Sidebar
         currentView={activeStory ? 'editor' : currentView}
         onNavigate={(v) => {
           setActiveStory(null);
           setCurrentView(v);
+          setIsMobileNavOpen(false);
         }}
         config={config}
         driveSyncStatus={{
@@ -489,6 +499,8 @@ export const App: React.FC = () => {
         onTriggerDriveSync={handleTriggerDriveSync}
         onSignOut={handleSignOut}
         userEmail={config.googleUserEmail}
+        isOpenMobile={isMobileNavOpen}
+        onCloseMobile={() => setIsMobileNavOpen(false)}
       />
 
       {/* Main Content Area */}
@@ -514,6 +526,7 @@ export const App: React.FC = () => {
             onOpenAuth={() => setIsAuthOpen(true)}
             userEmail={config.googleUserEmail}
             onTriggerDriveSync={handleTriggerDriveSync}
+            onToggleMobileNav={() => setIsMobileNavOpen(!isMobileNavOpen)}
             syncStatus={{
               syncing: driveSyncing,
               lastSynced: lastDriveSync,

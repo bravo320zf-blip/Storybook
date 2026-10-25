@@ -23,6 +23,7 @@ import {
   Layout,
   Columns,
   Split,
+  X,
 } from 'lucide-react';
 import { Story, Character, StoryboardData, WorldMap, BookChapter, BookPage, StoryStatus } from '../types';
 import { MapStampIcon } from '../utils/mapStamps';
@@ -90,11 +91,12 @@ export const EditorView: React.FC<EditorViewProps> = ({
       : chap.pages[0]?.id || '';
   });
 
-  // UI Panels
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  // UI Panels (auto-closed on mobile for full-screen writing)
+  const isMobileScreen = typeof window !== 'undefined' ? window.innerWidth < 768 : false;
+  const [isSidebarOpen, setIsSidebarOpen] = useState(!isMobileScreen);
   const [activeDrawerTab, setActiveDrawerTab] = useState<
     'notes' | 'recap' | 'characters' | 'storyboard' | 'map' | null
-  >('notes');
+  >(isMobileScreen ? null : 'notes');
   const [notesSubTab, setNotesSubTab] = useState<'page' | 'chapter' | 'book'>('page');
   const [layoutMode, setLayoutMode] = useState<'word-pages' | 'single-sheet'>('word-pages');
   const [fullScreen, setFullScreen] = useState(false);
@@ -456,27 +458,41 @@ export const EditorView: React.FC<EditorViewProps> = ({
     <div className={`editor-desk ${fullScreen ? 'fixed inset-0 z-50 bg-[var(--bg)]' : ''}`}>
       {/* Chapter & Page Sidebar */}
       {isSidebarOpen && (
-        <aside className="editor-chapters-sidebar">
-          {/* Sidebar Header */}
-          <div className="sidebar-toc-header">
-            <div>
-              <div style={{ fontWeight: 700, fontSize: '0.88rem', color: 'var(--ink)' }}>
-                Chapters & Pages
+        <>
+          <div
+            className="editor-drawer-backdrop"
+            onClick={() => setIsSidebarOpen(false)}
+          />
+          <aside className="editor-chapters-sidebar">
+            {/* Sidebar Header */}
+            <div className="sidebar-toc-header">
+              <div>
+                <div style={{ fontWeight: 700, fontSize: '0.88rem', color: 'var(--ink)' }}>
+                  Chapters & Pages
+                </div>
+                <div style={{ fontSize: '0.74rem', color: 'var(--muted)' }}>
+                  {chapters.length} chapter{chapters.length > 1 ? 's' : ''} · {bookTotalWords.toLocaleString()} words
+                </div>
               </div>
-              <div style={{ fontSize: '0.74rem', color: 'var(--muted)' }}>
-                {chapters.length} chapter{chapters.length > 1 ? 's' : ''} · {bookTotalWords.toLocaleString()} words
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <button
+                  className="action-btn-primary"
+                  style={{ padding: '5px 9px', fontSize: '0.78rem' }}
+                  onClick={handleAddChapter}
+                  title="Add a new Chapter document"
+                >
+                  <Plus size={13} />
+                  <span>Chapter</span>
+                </button>
+                <button
+                  className="icon-btn mobile-close-btn"
+                  onClick={() => setIsSidebarOpen(false)}
+                  title="Close chapters panel"
+                >
+                  <X size={16} />
+                </button>
               </div>
             </div>
-            <button
-              className="action-btn-primary"
-              style={{ padding: '5px 9px', fontSize: '0.78rem' }}
-              onClick={handleAddChapter}
-              title="Add a new Chapter document"
-            >
-              <Plus size={13} />
-              <span>Chapter</span>
-            </button>
-          </div>
 
           {/* Chapters & Pages Accordion Tree */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -493,6 +509,9 @@ export const EditorView: React.FC<EditorViewProps> = ({
                       setActiveChapterId(chap.id);
                       if (chap.pages.length > 0) {
                         setActivePageId(chap.pages[0].id);
+                      }
+                      if (window.innerWidth < 768) {
+                        setIsSidebarOpen(false);
                       }
                     }}
                   >
@@ -593,6 +612,9 @@ export const EditorView: React.FC<EditorViewProps> = ({
                           onClick={() => {
                             setActiveChapterId(chap.id);
                             setActivePageId(page.id);
+                            if (window.innerWidth < 768) {
+                              setIsSidebarOpen(false);
+                            }
                           }}
                         >
                           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -650,22 +672,14 @@ export const EditorView: React.FC<EditorViewProps> = ({
             })}
           </div>
         </aside>
-      )}
+      </>
+    )}
 
       {/* Writing Paper Area */}
       <div className="editor-main-paper">
         {/* Editor Top Navigation Bar */}
-        <div
-          style={{
-            width: '100%',
-            maxWidth: '820px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            marginBottom: '16px',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div className="editor-top-nav">
+          <div className="editor-nav-left">
             <button className="jump-in-btn" onClick={onBack}>
               <ArrowLeft size={16} />
               <span>Dashboard</span>
@@ -681,7 +695,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
             </button>
 
             {/* Breadcrumb path */}
-            <div style={{ fontSize: '0.82rem', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <div className="editor-breadcrumb">
               <span style={{ fontWeight: 600, color: 'var(--ink)' }}>{bookTitle}</span>
               <ChevronRight size={13} />
               <span>{activeChapter?.title}</span>
@@ -690,7 +704,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
             </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div className="editor-nav-right">
             <span style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>
               {pageWords}w (page) · {bookTotalWords.toLocaleString()}w total
             </span>
@@ -1119,45 +1133,58 @@ export const EditorView: React.FC<EditorViewProps> = ({
 
       {/* Right Drawer: Notes & Studio Peek */}
       {activeDrawerTab && (
-        <aside className="editor-studio-drawer" style={{ width: '340px' }}>
-          {/* Drawer tab headers */}
-          <div style={{ display: 'flex', gap: '4px', borderBottom: '1px solid var(--line)', paddingBottom: '10px' }}>
-            <button
-              className={`chip ${activeDrawerTab === 'notes' ? 'active' : ''}`}
-              style={{ fontSize: '0.75rem', padding: '4px 10px' }}
-              onClick={() => setActiveDrawerTab('notes')}
-            >
-              Notes
-            </button>
-            <button
-              className={`chip ${activeDrawerTab === 'recap' ? 'active' : ''}`}
-              style={{ fontSize: '0.75rem', padding: '4px 10px' }}
-              onClick={() => setActiveDrawerTab('recap')}
-            >
-              Recap
-            </button>
-            <button
-              className={`chip ${activeDrawerTab === 'characters' ? 'active' : ''}`}
-              style={{ fontSize: '0.75rem', padding: '4px 10px' }}
-              onClick={() => setActiveDrawerTab('characters')}
-            >
-              Cast ({characters.length})
-            </button>
-            <button
-              className={`chip ${activeDrawerTab === 'storyboard' ? 'active' : ''}`}
-              style={{ fontSize: '0.75rem', padding: '4px 10px' }}
-              onClick={() => setActiveDrawerTab('storyboard')}
-            >
-              Board
-            </button>
-            <button
-              className={`chip ${activeDrawerTab === 'map' ? 'active' : ''}`}
-              style={{ fontSize: '0.75rem', padding: '4px 10px' }}
-              onClick={() => setActiveDrawerTab('map')}
-            >
-              Map
-            </button>
-          </div>
+        <>
+          <div
+            className="editor-drawer-backdrop"
+            onClick={() => setActiveDrawerTab(null)}
+          />
+          <aside className="editor-studio-drawer">
+            {/* Drawer tab headers */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', borderBottom: '1px solid var(--line)', paddingBottom: '10px' }}>
+              <button
+                className={`chip ${activeDrawerTab === 'notes' ? 'active' : ''}`}
+                style={{ fontSize: '0.75rem', padding: '4px 10px' }}
+                onClick={() => setActiveDrawerTab('notes')}
+              >
+                Notes
+              </button>
+              <button
+                className={`chip ${activeDrawerTab === 'recap' ? 'active' : ''}`}
+                style={{ fontSize: '0.75rem', padding: '4px 10px' }}
+                onClick={() => setActiveDrawerTab('recap')}
+              >
+                Recap
+              </button>
+              <button
+                className={`chip ${activeDrawerTab === 'characters' ? 'active' : ''}`}
+                style={{ fontSize: '0.75rem', padding: '4px 10px' }}
+                onClick={() => setActiveDrawerTab('characters')}
+              >
+                Cast ({characters.length})
+              </button>
+              <button
+                className={`chip ${activeDrawerTab === 'storyboard' ? 'active' : ''}`}
+                style={{ fontSize: '0.75rem', padding: '4px 10px' }}
+                onClick={() => setActiveDrawerTab('storyboard')}
+              >
+                Board
+              </button>
+              <button
+                className={`chip ${activeDrawerTab === 'map' ? 'active' : ''}`}
+                style={{ fontSize: '0.75rem', padding: '4px 10px' }}
+                onClick={() => setActiveDrawerTab('map')}
+              >
+                Map
+              </button>
+              <button
+                className="icon-btn mobile-close-btn"
+                style={{ marginLeft: 'auto' }}
+                onClick={() => setActiveDrawerTab(null)}
+                title="Close studio drawer"
+              >
+                <X size={16} />
+              </button>
+            </div>
 
           {/* NOTES TAB: Page Notes, Chapter Notes, and Book Notes */}
           {activeDrawerTab === 'notes' && (
@@ -1391,7 +1418,8 @@ export const EditorView: React.FC<EditorViewProps> = ({
               )}
             </div>
           )}
-        </aside>
+          </aside>
+        </>
       )}
 
       {/* Export Modal (Page, Chapter, or Whole Book) */}

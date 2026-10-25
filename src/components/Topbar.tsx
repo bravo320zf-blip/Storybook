@@ -16,6 +16,7 @@ import {
   RefreshCw,
   Cloud,
   Check,
+  Menu,
 } from 'lucide-react';
 import { UserConfig } from '../types';
 
@@ -36,6 +37,7 @@ interface TopbarProps {
   onOpenAuth: () => void;
   userEmail?: string;
   onTriggerDriveSync?: () => void;
+  onToggleMobileNav?: () => void;
   syncStatus: {
     syncing: boolean;
     lastSynced?: number;
@@ -60,6 +62,7 @@ export const Topbar: React.FC<TopbarProps> = ({
   onOpenAuth,
   userEmail,
   onTriggerDriveSync,
+  onToggleMobileNav,
   syncStatus,
 }) => {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -74,6 +77,17 @@ export const Topbar: React.FC<TopbarProps> = ({
 
   return (
     <header className="topbar">
+      {/* Mobile Hamburger Toggle Button */}
+      {onToggleMobileNav && (
+        <button
+          className="icon-btn mobile-hamburger-btn"
+          onClick={onToggleMobileNav}
+          title="Open menu"
+        >
+          <Menu size={20} />
+        </button>
+      )}
+
       {/* Search Bar */}
       <div className="search-box">
         <Search size={15} style={{ color: 'var(--muted)' }} />
@@ -85,9 +99,9 @@ export const Topbar: React.FC<TopbarProps> = ({
         />
       </div>
 
-      {/* Command Palette trigger */}
+      {/* Command Palette trigger (desktop only) */}
       <button
-        className="icon-btn"
+        className="icon-btn desktop-only"
         onClick={onOpenCmdk}
         title="Command palette (⌘K / Ctrl+K)"
         style={{ width: 'auto', padding: '0 10px', gap: '6px', fontSize: '0.8rem', border: '1px solid var(--line)' }}
@@ -98,7 +112,7 @@ export const Topbar: React.FC<TopbarProps> = ({
 
       {/* Sprint Timer quick trigger */}
       <button
-        className="icon-btn"
+        className="icon-btn desktop-only-compact"
         onClick={onOpenSprint}
         title="Start writing sprint"
         style={{ width: 'auto', padding: '0 10px', gap: '6px', fontSize: '0.8rem', border: '1px solid var(--line)' }}
@@ -108,7 +122,7 @@ export const Topbar: React.FC<TopbarProps> = ({
       </button>
 
       {/* Help Tips */}
-      <button className="icon-btn" onClick={onOpenHelp} title="Tips & features guide">
+      <button className="icon-btn desktop-only-compact" onClick={onOpenHelp} title="Tips & features guide">
         <HelpCircle size={16} />
       </button>
 
@@ -148,7 +162,7 @@ export const Topbar: React.FC<TopbarProps> = ({
               size={13}
               style={{ color: syncStatus.lastSynced ? '#4285F4' : 'var(--muted)' }}
             />
-            <span style={{ fontWeight: 500 }}>
+            <span className="desktop-only-compact" style={{ fontWeight: 500 }}>
               {syncStatus.lastSynced ? (
                 <>
                   <span style={{ color: 'var(--muted)', marginRight: '3px' }}>Drive:</span>
