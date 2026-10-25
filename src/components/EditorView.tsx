@@ -1393,11 +1393,20 @@ export const EditorView: React.FC<EditorViewProps> = ({
                       gap: '4px',
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <span style={{ fontWeight: 600, fontSize: '0.88rem' }}>{c.name}</span>
-                      <span style={{ fontSize: '0.7rem', color: 'var(--accent)', textTransform: 'uppercase' }}>
-                        {c.role}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
+                      <span style={{ fontWeight: 600, fontSize: '0.88rem' }}>
+                        {c.entityKind === 'monster' ? '👹 ' : ''}{c.name}
                       </span>
+                      <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
+                        {c.sheetSystem && c.sheetSystem !== 'narrative' && (
+                          <span style={{ fontSize: '0.65rem', padding: '1px 5px', borderRadius: '3px', background: 'var(--accent-glow, rgba(186,117,23,0.1))', color: 'var(--accent)', fontWeight: 700, textTransform: 'uppercase' }}>
+                            {c.sheetSystem === 'dnd5e' ? '5E' : c.sheetSystem === 'shadowdark' ? 'SD' : c.sheetSystem === 'valiant' ? 'TOV' : 'SYS'}
+                          </span>
+                        )}
+                        <span style={{ fontSize: '0.7rem', color: 'var(--accent)', textTransform: 'uppercase' }}>
+                          {c.role}
+                        </span>
+                      </div>
                     </div>
                     {c.wound && (
                       <div style={{ fontSize: '0.76rem', color: 'var(--muted)' }}>

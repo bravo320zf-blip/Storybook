@@ -89,6 +89,201 @@ export interface StoryboardData {
   locationId?: string;  // Attached to a specific Location/Stamp on that Map
 }
 
+export type EntityKind = 'character' | 'monster';
+export type SheetSystem = 'narrative' | 'dnd5e' | 'shadowdark' | 'valiant' | 'custom';
+
+export interface AbilityScores {
+  str: number;
+  dex: number;
+  con: number;
+  int: number;
+  wis: number;
+  cha: number;
+}
+
+export interface AttackEntry {
+  id: string;
+  name: string;
+  bonus: string;
+  damage: string;
+  type?: string;
+  range?: string;
+  notes?: string;
+}
+
+export interface SpellSlot {
+  level: number;
+  total: number;
+  used: number;
+}
+
+export interface TraitEntry {
+  id: string;
+  name: string;
+  description: string;
+}
+
+// 1. D&D 5E Character Sheet
+export interface Dnd5eCharacterSheet {
+  classLevel: string;
+  race: string;
+  background: string;
+  alignment: string;
+  xp: string;
+  stats: AbilityScores;
+  savingThrows: { [key in keyof AbilityScores]?: boolean };
+  skills: { [skillName: string]: boolean };
+  ac: number;
+  initiative: number;
+  speed: string;
+  hpMax: number;
+  hpCurrent: number;
+  hpTemp: number;
+  hitDice: string;
+  proficiencyBonus: number;
+  deathSaves: { successes: number; failures: number };
+  passivePerception: number;
+  attacks: AttackEntry[];
+  spellcastingAbility?: string;
+  spellSaveDc?: number;
+  spellAttackBonus?: number;
+  spellSlots?: SpellSlot[];
+  spellsKnown?: string;
+  featuresTraits?: string;
+  equipment?: string;
+  currency?: { cp: number; sp: number; ep: number; gp: number; pp: number };
+}
+
+// 2. D&D 5E Monster Sheet
+export interface Dnd5eMonsterSheet {
+  size: string;
+  type: string;
+  alignment: string;
+  ac: string;
+  hp: string;
+  speed: string;
+  stats: AbilityScores;
+  savingThrows: string;
+  skills: string;
+  vulnerabilities: string;
+  resistances: string;
+  immunities: string;
+  conditionImmunities: string;
+  senses: string;
+  languages: string;
+  cr: string;
+  proficiencyBonus: number;
+  traits: TraitEntry[];
+  actions: TraitEntry[];
+  bonusActions: TraitEntry[];
+  reactions: TraitEntry[];
+  legendaryActions: TraitEntry[];
+}
+
+// 3. ShadowDark Character Sheet
+export interface ShadowdarkCharacterSheet {
+  characterClass: string;
+  ancestry: string;
+  level: number;
+  title: string;
+  alignment: 'Lawful' | 'Neutral' | 'Chaotic';
+  deity: string;
+  background: string;
+  stats: AbilityScores;
+  ac: number;
+  hpMax: number;
+  hpCurrent: number;
+  speed: string; // Close, Near, Far
+  attacks: AttackEntry[];
+  gearSlots: { id: string; name: string; slots: number; torchHours?: number }[];
+  maxSlots: number;
+  talents: string;
+  spells: string;
+  gold: number;
+}
+
+// 4. ShadowDark Monster Sheet
+export interface ShadowdarkMonsterSheet {
+  level: number;
+  alignment: 'Lawful' | 'Neutral' | 'Chaotic';
+  ac: number;
+  hp: string;
+  movement: string;
+  attacks: string; // e.g. "2 claws +3 (1d6) and 1 bite +3 (1d8 + poison)"
+  stats: AbilityScores;
+  specials: string;
+}
+
+// 5. Tales of the Valiant Character Sheet
+export interface ValiantCharacterSheet {
+  classLevel: string;
+  lineage: string;
+  heritage: string;
+  background: string;
+  alignment: string;
+  stats: AbilityScores;
+  ac: number;
+  speed: string;
+  hpMax: number;
+  hpCurrent: number;
+  hpTemp: number;
+  hitDice: string;
+  luckMax: number;
+  luckCurrent: number;
+  perceptionPassive: number;
+  stealthPassive: number;
+  attacks: AttackEntry[];
+  talents: string;
+  spells: string;
+  equipment: string;
+}
+
+// 6. Tales of the Valiant Monster Sheet
+export interface ValiantMonsterSheet {
+  size: string;
+  creatureType: string;
+  alignment: string;
+  cr: string;
+  ac: string;
+  hp: string;
+  speed: string;
+  stats: AbilityScores;
+  doomPoints: number;
+  perception: number;
+  stealth: number;
+  senses: string;
+  languages: string;
+  resistances: string;
+  traits: TraitEntry[];
+  actions: TraitEntry[];
+  bonusActions: TraitEntry[];
+  reactions: TraitEntry[];
+}
+
+// 7. Custom Homebrew System Sheet
+export interface CustomAttribute {
+  id: string;
+  name: string;
+  value: string;
+}
+
+export interface CustomResourcePool {
+  id: string;
+  name: string;
+  current: number;
+  max: number;
+}
+
+export interface CustomSystemSheet {
+  systemName: string;
+  attributes: CustomAttribute[];
+  resourcePools: CustomResourcePool[];
+  skills: { id: string; name: string; value: string }[];
+  attacks: AttackEntry[];
+  powersAbilities: string;
+  notes: string;
+}
+
 export interface Character {
   id: string;
   name: string;
@@ -108,6 +303,17 @@ export interface Character {
   notes: string;
   appearance?: string;
   created: number;
+
+  // Game System Sheet Attachments
+  entityKind?: EntityKind;       // 'character' | 'monster'
+  sheetSystem?: SheetSystem;     // 'narrative' | 'dnd5e' | 'shadowdark' | 'valiant' | 'custom'
+  dnd5eSheet?: Dnd5eCharacterSheet;
+  dnd5eMonster?: Dnd5eMonsterSheet;
+  shadowdarkSheet?: ShadowdarkCharacterSheet;
+  shadowdarkMonster?: ShadowdarkMonsterSheet;
+  valiantSheet?: ValiantCharacterSheet;
+  valiantMonster?: ValiantMonsterSheet;
+  customSheet?: CustomSystemSheet;
 }
 
 export type MapAspect = 'screen' | 'book' | 'poster' | 'square' | 'wide';

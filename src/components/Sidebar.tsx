@@ -74,7 +74,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       items: [
         { id: 'muse', label: 'Muse', icon: Sparkles, tint: '#BA7517' },
         { id: 'storyboard', label: 'Storyboard', icon: LayoutGrid, tint: '#8a5cc0' },
-        { id: 'characters', label: 'Characters', icon: Users, tint: '#B0567A' },
+        { id: 'characters', label: 'Characters & Monsters', icon: Users, tint: '#B0567A' },
         { id: 'art', label: 'Art board', icon: Palette, tint: '#1D9E75' },
         { id: 'maps', label: 'Map maker', icon: Compass, tint: '#3E7A8C' },
       ],
