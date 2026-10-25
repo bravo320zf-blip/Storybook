@@ -68,7 +68,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       onClose();
     } catch (err: any) {
       console.error(err);
-      setError(err.message || 'Google sign-in was cancelled or encountered an error.');
+      if (err.code === 'auth/unauthorized-domain' || err.message?.includes('unauthorized-domain')) {
+        const domain = typeof window !== 'undefined' ? window.location.hostname : 'bravo320zf-blip.github.io';
+        setError(
+          `Domain "${domain}" is not authorized yet in Firebase. Please add "${domain}" in your Firebase Console under Authentication → Settings → Authorized domains.`
+        );
+      } else {
+        setError(err.message || 'Google sign-in was cancelled or encountered an error.');
+      }
     } finally {
       setLoading(false);
     }

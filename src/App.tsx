@@ -219,7 +219,14 @@ export const App: React.FC = () => {
       }
     } catch (err: any) {
       console.warn('Sign-in note:', err);
-      const demoEmail = prompt('Enter your Google Account email to link Drive:', 'author@inkling.writer');
+      if (err.code === 'auth/unauthorized-domain' || err.message?.includes('unauthorized-domain')) {
+        const domain = typeof window !== 'undefined' ? window.location.hostname : 'bravo320zf-blip.github.io';
+        alert(
+          `Domain "${domain}" is not authorized for Google OAuth yet in Firebase.\n\nTo fix this:\n1. Open console.firebase.google.com\n2. Select your project ("inkling-writing-desk")\n3. Click Authentication → Settings → Authorized domains\n4. Click "Add domain" and enter "${domain}"`
+        );
+        return;
+      }
+      const demoEmail = prompt('Enter your Google Account email to link Drive:', 'author@storybook.writer');
       if (demoEmail) {
         setConfig((prev) => ({
           ...prev,
