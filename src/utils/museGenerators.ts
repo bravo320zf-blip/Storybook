@@ -459,6 +459,17 @@ const PLACE_SENSORIES = [
   'Pervasive reek of brine, rotting kelp, and guttering tallow candles.',
 ];
 
+const PLACE_HAZARDS = [
+  'Collapsing masonry, pockets of suffocating sulfur gas, and hidden pressure plates.',
+  'Unstable scree slopes, sudden flash floods, and territorial nesting wyverns.',
+  'Magnetic anomalies that spin compasses and draw iron weapons toward cliff walls.',
+  'Toxic spore blooms that induce vivid waking hallucinations and memory lapses.',
+  'Uncharted sinkholes, lurking mire-crawlers, and ancient spring-loaded bolt traps.',
+  'Sudden chilling mists that extinguish open flames and numb bare skin in moments.',
+  'Prowling night scavengers, treacherous slippery mudslides, and crumbling rotted rope bridges.',
+  'Eerie sound-echoes that mask approaching stalkers and disorient party navigation.',
+];
+
 // -------------------------------------------------------------
 // 6. ARTIFACTS & RELICS
 // -------------------------------------------------------------
@@ -621,7 +632,7 @@ export function generatePlace(genre: MuseGenre = 'fantasy'): GeneratedPlace {
     descriptor: `${mod} ${noun}`,
     feature: pick(PLACE_FEATURES),
     sensory: pick(PLACE_SENSORIES),
-    hazard: 'Collapsing masonry, pockets of suffocating sulfur gas, and hidden pressure plates.',
+    hazard: pick(PLACE_HAZARDS),
   };
 }
 

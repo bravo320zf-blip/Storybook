@@ -48,7 +48,7 @@ import {
   deleteStoryFromFirestore,
   clearUserFirestoreData,
 } from './services/firebase';
-import { Story, Character, StoryboardData, WorldMap, UserConfig, CardKind, MapStamp } from './types';
+import { Story, Character, StoryboardData, StoryboardCard, WorldMap, UserConfig, CardKind, MapStamp } from './types';
 
 export const App: React.FC = () => {
   // App Core State
@@ -396,15 +396,21 @@ export const App: React.FC = () => {
   };
 
   // Add spark from Muse directly to Storyboard
-  const handleAddCardToStoryboard = (kind: CardKind, title: string, body: string) => {
-    const newCard = {
-      id: `sb-${Date.now()}`,
+  const handleAddCardToStoryboard = (
+    kind: CardKind,
+    title: string,
+    body: string,
+    extra?: Partial<StoryboardCard>
+  ) => {
+    const newCard: StoryboardCard = {
+      id: `sb-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
       kind,
       title,
       body,
       x: 150 + Math.random() * 200,
       y: 150 + Math.random() * 150,
-      width: 240,
+      width: 260,
+      ...(extra || {}),
     };
     setStoryboards((prev) => {
       const targetId = activeStoryboardId || prev[0]?.id;
@@ -413,7 +419,6 @@ export const App: React.FC = () => {
       );
     });
     setStoryboardLastModified(Date.now());
-    alert(`Added "${title}" to your Storyboard!`);
     setCurrentView('storyboard');
   };
 
@@ -727,12 +732,12 @@ export const App: React.FC = () => {
             onAddCardToStoryboard={handleAddCardToStoryboard}
             onAddCharacter={(char) => {
               const newChar: Character = {
-                id: `char-${Date.now()}`,
+                id: `char-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
                 name: char.name || 'Unnamed Character',
                 role: (char.role as any) || 'supporting',
                 archetype: char.archetype || '',
                 tagline: char.tagline || '',
-                avatarColor: char.avatarColor || '#B0567A',
+                avatarColor: char.avatarColor || (char.entityKind === 'monster' ? '#dc2626' : '#B0567A'),
                 traits: char.traits || [],
                 wound: char.wound || '',
                 fear: char.fear || '',
@@ -749,17 +754,23 @@ export const App: React.FC = () => {
               setCharacters((prev) => [...prev, newChar]);
               setCharactersLastModified(Date.now());
               setSelectedCharacterId(newChar.id);
+              return newChar.id;
             }}
             onAddStampToMap={(stamp) => {
               const targetMapId = activeMapId || maps[0]?.id;
               if (!targetMapId) return;
               const newStamp: MapStamp = {
-                id: `stamp-${Date.now()}`,
+                id: `stamp-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
                 type: stamp.type || 'ruins',
                 label: stamp.label || 'New Landmark',
                 scale: 1.0,
                 x: 400 + Math.round(Math.random() * 200 - 100),
                 y: 300 + Math.round(Math.random() * 200 - 100),
+                feature: stamp.feature,
+                sensory: stamp.sensory,
+                hazard: stamp.hazard,
+                description: stamp.description,
+                lore: stamp.lore,
               };
               setMaps((prev) =>
                 prev.map((m) =>
@@ -769,6 +780,7 @@ export const App: React.FC = () => {
                 )
               );
               setMapsLastModified(Date.now());
+              setCurrentView('mapmaker');
             }}
             onNavigate={(view) => setCurrentView(view)}
             config={config}

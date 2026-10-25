@@ -333,6 +333,12 @@ export interface MapStamp {
   characterId?: string;  // Direct link to Character or Monster (e.g. for hero or monster tokens)
   characterIds?: string[]; // Assigned characters / monsters inhabiting this location
   encounterNotes?: string; // Encounter or inhabitant notes for this location
+  // Location Details & Lore (from Muse or worldbuilding)
+  description?: string;
+  feature?: string;
+  sensory?: string;
+  hazard?: string;
+  lore?: string;
 }
 
 export interface MapPath {

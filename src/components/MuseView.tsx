@@ -20,7 +20,7 @@ import {
   RefreshCw,
   HelpCircle,
 } from 'lucide-react';
-import { CardKind, Character, MapStamp, Story, UserConfig } from '../types';
+import { CardKind, Character, MapStamp, Story, UserConfig, StoryboardCard } from '../types';
 import {
   MuseGenre,
   GeneratedCharacter,
@@ -44,9 +44,21 @@ import {
 } from '../utils/museGenerators';
 import { generateFreeAiPrompt } from '../services/freeAiService';
 
+function inferStampType(name: string, desc: string): string {
+  const text = `${name} ${desc}`.toLowerCase();
+  if (text.includes('tower') || text.includes('spire') || text.includes('beacon') || text.includes('lighthouse') || text.includes('obelisk')) return 'tower';
+  if (text.includes('citadel') || text.includes('castle') || text.includes('fort') || text.includes('keep') || text.includes('bastion') || text.includes('palace') || text.includes('stronghold')) return 'castle';
+  if (text.includes('cave') || text.includes('cavern') || text.includes('chasm') || text.includes('mine') || text.includes('quarry') || text.includes('grotto') || text.includes('catacomb')) return 'cave';
+  if (text.includes('forest') || text.includes('wood') || text.includes('grove') || text.includes('tree') || text.includes('jungle') || text.includes('swamp') || text.includes('marsh')) return 'tree';
+  if (text.includes('port') || text.includes('harbor') || text.includes('dock') || text.includes('bay') || text.includes('cove') || text.includes('wharf')) return 'port';
+  if (text.includes('mountain') || text.includes('peak') || text.includes('ridge') || text.includes('cliff')) return 'mountain';
+  if (text.includes('shrine') || text.includes('temple') || text.includes('monolith') || text.includes('altar') || text.includes('crypt')) return 'monolith';
+  return 'ruins';
+}
+
 interface MuseViewProps {
-  onAddCardToStoryboard: (kind: CardKind, title: string, body: string) => void;
-  onAddCharacter?: (char: Partial<Character>) => void;
+  onAddCardToStoryboard: (kind: CardKind, title: string, body: string, extra?: Partial<StoryboardCard>) => void;
+  onAddCharacter?: (char: Partial<Character>) => string | void;
   onAddStampToMap?: (stamp: Partial<MapStamp>) => void;
   onNavigate?: (view: string) => void;
   config?: UserConfig;
@@ -482,7 +494,7 @@ export const MuseView: React.FC<MuseViewProps> = ({
                   <button
                     className="action-btn-primary"
                     onClick={() => {
-                      onAddCardToStoryboard('idea', 'AI Muse Spark', aiResult);
+                      onAddCardToStoryboard('idea', 'AI Muse Spark', aiResult, { tag: 'AI Muse', width: 280 });
                       showToast('Sent AI spark to Storyboard!');
                     }}
                     style={{ fontSize: '0.74rem', padding: '4px 8px', gap: '4px' }}
@@ -536,7 +548,7 @@ export const MuseView: React.FC<MuseViewProps> = ({
                 className="action-btn-primary"
                 onClick={() => {
                   const body = `Protagonist: ${masterScene.protagonist}\n\nCatalyst: ${masterScene.catalyst}\n\nSetting & Threat: ${masterScene.threat}\n\nTwist: ${masterScene.twist}\n\nStakes: ${masterScene.stakes}`;
-                  onAddCardToStoryboard('beat', masterScene.title, body);
+                  onAddCardToStoryboard('beat', masterScene.title, body, { tag: 'Muse · Master Scene', width: 320 });
                   showToast('Added full scene spark to Storyboard!');
                 }}
                 style={{ fontSize: '0.76rem', padding: '4px 10px', gap: '4px' }}
@@ -656,7 +668,36 @@ export const MuseView: React.FC<MuseViewProps> = ({
             <button
               className="action-btn-primary"
               onClick={() => {
-                onAddCardToStoryboard('character', `${charSpark.name} ${charSpark.epithet}`, `${charSpark.archetype}\n\nWound: ${charSpark.wound}\nLie: ${charSpark.lie}\nQuirk: ${charSpark.quirk}`);
+                const charId = onAddCharacter
+                  ? onAddCharacter({
+                      name: `${charSpark.name} ${charSpark.epithet}`,
+                      role: 'supporting',
+                      archetype: charSpark.archetype,
+                      wound: charSpark.wound,
+                      lie: charSpark.lie,
+                      want: charSpark.want,
+                      need: charSpark.need,
+                      traits: [charSpark.quirk],
+                      notes: `Signature Item: ${charSpark.signatureItem}`,
+                      entityKind: 'character',
+                    })
+                  : undefined;
+
+                const body = [
+                  `Archetype: ${charSpark.archetype}`,
+                  `Deep Wound: ${charSpark.wound}`,
+                  `The Lie: ${charSpark.lie}`,
+                  `Want: ${charSpark.want}`,
+                  `Need: ${charSpark.need}`,
+                  `Quirk: ${charSpark.quirk}`,
+                  `Signature Gear: ${charSpark.signatureItem}`,
+                ].join('\n\n');
+
+                onAddCardToStoryboard('character', `${charSpark.name} ${charSpark.epithet}`, body, {
+                  characterId: typeof charId === 'string' ? charId : undefined,
+                  tag: 'Muse · Character',
+                  width: 280,
+                });
                 showToast(`Sent ${charSpark.name} to Storyboard!`);
               }}
               style={{ flex: 1, fontSize: '0.74rem', padding: '4px' }}
@@ -753,7 +794,29 @@ export const MuseView: React.FC<MuseViewProps> = ({
             <button
               className="action-btn-primary"
               onClick={() => {
-                onAddCardToStoryboard('monster', monsterSpark.name, `${monsterSpark.nature}\n\nAbility: ${monsterSpark.ability}\nLair: ${monsterSpark.lair}\nWeakness: ${monsterSpark.weakness}`);
+                const monId = onAddCharacter
+                  ? onAddCharacter({
+                      name: monsterSpark.name,
+                      role: 'antagonist',
+                      archetype: monsterSpark.dangerLevel,
+                      notes: `${monsterSpark.nature}\n\nAbility: ${monsterSpark.ability}\nLair: ${monsterSpark.lair}\nWeakness: ${monsterSpark.weakness}`,
+                      entityKind: 'monster',
+                    })
+                  : undefined;
+
+                const body = [
+                  `Threat Level: ${monsterSpark.dangerLevel}`,
+                  `Nature: ${monsterSpark.nature}`,
+                  `Terrifying Ability: ${monsterSpark.ability}`,
+                  `Lair / Domain: ${monsterSpark.lair}`,
+                  `Fatal Flaw / Weakness: ${monsterSpark.weakness}`,
+                ].join('\n\n');
+
+                onAddCardToStoryboard('monster', monsterSpark.name, body, {
+                  characterId: typeof monId === 'string' ? monId : undefined,
+                  tag: 'Muse · Monster',
+                  width: 280,
+                });
                 showToast(`Sent ${monsterSpark.name} to Storyboard!`);
               }}
               style={{ flex: 1, fontSize: '0.74rem', padding: '4px' }}
@@ -834,7 +897,15 @@ export const MuseView: React.FC<MuseViewProps> = ({
             <button
               className="action-btn-primary"
               onClick={() => {
-                onAddCardToStoryboard('beat', hookSpark.title, `${hookSpark.incitingEvent}\n\nClock: ${hookSpark.tickingClock}\nStakes: ${hookSpark.hiddenStakes}`);
+                const body = [
+                  `Inciting Event: ${hookSpark.incitingEvent}`,
+                  `Ticking Clock: ${hookSpark.tickingClock}`,
+                  `Hidden Threat: ${hookSpark.hiddenStakes}`,
+                ].join('\n\n');
+                onAddCardToStoryboard('beat', hookSpark.title, body, {
+                  tag: 'Muse · Hook',
+                  width: 280,
+                });
                 showToast(`Sent hook to Storyboard!`);
               }}
               style={{ flex: 1, fontSize: '0.74rem' }}
@@ -890,7 +961,14 @@ export const MuseView: React.FC<MuseViewProps> = ({
             <button
               className="action-btn-primary"
               onClick={() => {
-                onAddCardToStoryboard('beat', twistSpark.title, `${twistSpark.twist}\n\nImplication: ${twistSpark.implication}`);
+                const body = [
+                  `The Twist: ${twistSpark.twist}`,
+                  `Dramatic Consequence: ${twistSpark.implication}`,
+                ].join('\n\n');
+                onAddCardToStoryboard('beat', twistSpark.title, body, {
+                  tag: 'Muse · Twist',
+                  width: 280,
+                });
                 showToast(`Sent twist to Storyboard!`);
               }}
               style={{ flex: 1, fontSize: '0.74rem' }}
@@ -954,7 +1032,16 @@ export const MuseView: React.FC<MuseViewProps> = ({
             <button
               className="action-btn-primary"
               onClick={() => {
-                onAddCardToStoryboard('place', placeSpark.name, `${placeSpark.feature}\n\nAtmosphere: ${placeSpark.sensory}\nPeril: ${placeSpark.hazard}`);
+                const body = [
+                  `Landmark Type: ${placeSpark.descriptor}`,
+                  `Dominant Feature: ${placeSpark.feature}`,
+                  `Atmosphere: ${placeSpark.sensory}`,
+                  `Peril: ${placeSpark.hazard}`,
+                ].join('\n\n');
+                onAddCardToStoryboard('place', placeSpark.name, body, {
+                  tag: 'Muse · Landmark',
+                  width: 280,
+                });
                 showToast(`Sent ${placeSpark.name} to Storyboard!`);
               }}
               style={{ flex: 1, fontSize: '0.74rem', padding: '4px' }}
@@ -966,15 +1053,21 @@ export const MuseView: React.FC<MuseViewProps> = ({
               <button
                 className="action-btn-secondary"
                 onClick={() => {
+                  const stampType = inferStampType(placeSpark.name, placeSpark.descriptor);
                   onAddStampToMap({
-                    label: placeSpark.descriptor,
-                    type: 'ruins',
+                    label: placeSpark.name,
+                    type: stampType,
+                    feature: placeSpark.feature,
+                    sensory: placeSpark.sensory,
+                    hazard: placeSpark.hazard,
+                    description: placeSpark.descriptor,
+                    lore: `${placeSpark.descriptor}\n\nAtmosphere: ${placeSpark.sensory}\nPeril: ${placeSpark.hazard}`,
                   });
-                  showToast(`Added ${placeSpark.descriptor} to Map Maker!`);
+                  showToast(`Added ${placeSpark.name} to Map Maker!`);
                   if (onNavigate) onNavigate('maps');
                 }}
                 style={{ fontSize: '0.74rem', padding: '4px 8px', color: '#3E7A8C' }}
-                title="Add as stamp to Map Maker"
+                title="Add as stamp with full details to Map Maker"
               >
                 + To Map
               </button>
@@ -1033,7 +1126,15 @@ export const MuseView: React.FC<MuseViewProps> = ({
             <button
               className="action-btn-primary"
               onClick={() => {
-                onAddCardToStoryboard('idea', relicSpark.name, `${relicSpark.appearance}\n\nPower: ${relicSpark.power}\nCost: ${relicSpark.cost}`);
+                const body = [
+                  `Appearance: ${relicSpark.appearance}`,
+                  `Wondrous Power: ${relicSpark.power}`,
+                  `Terrible Price / Curse: ${relicSpark.cost}`,
+                ].join('\n\n');
+                onAddCardToStoryboard('idea', relicSpark.name, body, {
+                  tag: 'Muse · Relic',
+                  width: 280,
+                });
                 showToast(`Sent relic to Storyboard!`);
               }}
               style={{ flex: 1, fontSize: '0.74rem' }}
@@ -1095,7 +1196,15 @@ export const MuseView: React.FC<MuseViewProps> = ({
             <button
               className="action-btn-primary"
               onClick={() => {
-                onAddCardToStoryboard('idea', dilemmaSpark.title, `${dilemmaSpark.situation}\n\nOption A: ${dilemmaSpark.choiceA}\nOption B: ${dilemmaSpark.choiceB}`);
+                const body = [
+                  `The Crisis: ${dilemmaSpark.situation}`,
+                  `Option A: ${dilemmaSpark.choiceA}`,
+                  `Option B: ${dilemmaSpark.choiceB}`,
+                ].join('\n\n');
+                onAddCardToStoryboard('idea', dilemmaSpark.title, body, {
+                  tag: 'Muse · Dilemma',
+                  width: 280,
+                });
                 showToast(`Sent dilemma to Storyboard!`);
               }}
               style={{ flex: 1, fontSize: '0.74rem' }}
@@ -1148,7 +1257,15 @@ export const MuseView: React.FC<MuseViewProps> = ({
             <button
               className="action-btn-primary"
               onClick={() => {
-                onAddCardToStoryboard('beat', 'Dialogue Hook', `${dialogueSpark.quote}\n\nContext: ${dialogueSpark.speaker} (${dialogueSpark.context})`);
+                const body = [
+                  `“${dialogueSpark.quote}”`,
+                  `Speaker: ${dialogueSpark.speaker}`,
+                  `Context: ${dialogueSpark.context}`,
+                ].join('\n\n');
+                onAddCardToStoryboard('beat', `Quote: ${dialogueSpark.speaker}`, body, {
+                  tag: 'Muse · Dialogue',
+                  width: 280,
+                });
                 showToast(`Sent dialogue hook to Storyboard!`);
               }}
               style={{ flex: 1, fontSize: '0.74rem' }}

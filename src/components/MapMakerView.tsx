@@ -33,10 +33,16 @@ import {
   Eye,
   ExternalLink,
   Shield,
+  Dices,
+  Book,
+  Flame,
+  Wind,
+  Edit2,
 } from 'lucide-react';
 import { WorldMap, MapStamp, MapAspect, MapStyle, MapPath, Story, StoryboardData, Character } from '../types';
 import { MapStampIcon } from '../utils/mapStamps';
 import { CharacterSheetModal } from './characterSheets/CharacterSheetModal';
+import { generatePlace } from '../utils/museGenerators';
 
 interface MapMakerViewProps {
   maps: WorldMap[];
@@ -228,11 +234,29 @@ export const MapMakerView: React.FC<MapMakerViewProps> = ({
     saveMap({ ...currentMap, stamps: updatedStamps, updatedAt: Date.now() });
   };
 
+  const handleUpdateStampDetails = (stampId: string, updates: Partial<MapStamp>) => {
+    const updatedStamps = (currentMap.stamps || []).map((s) =>
+      s.id === stampId ? { ...s, ...updates } : s
+    );
+    saveMap({ ...currentMap, stamps: updatedStamps, updatedAt: Date.now() });
+  };
+
+  const handleRollLoreForStamp = (stampId: string) => {
+    const place = generatePlace('fantasy');
+    handleUpdateStampDetails(stampId, {
+      feature: place.feature,
+      sensory: place.sensory,
+      hazard: place.hazard,
+      lore: `${place.descriptor}. ${place.feature}`,
+    });
+  };
+
   const [mode, setMode] = useState<ToolMode>('stamp');
   const [activeCategoryIndex, setActiveCategoryIndex] = useState(0);
   const [activeStampType, setActiveStampType] = useState<string>('castle');
   const [stampScale, setStampScale] = useState<number>(1.0);
   const [selectedStampId, setSelectedStampId] = useState<string | null>(null);
+  const [isEditingLore, setIsEditingLore] = useState(false);
 
   // Drawing tool state
   const [activePathType, setActivePathType] = useState<'coast' | 'river' | 'road' | 'border'>('river');
@@ -1491,6 +1515,17 @@ export const MapMakerView: React.FC<MapMakerViewProps> = ({
                   onPointerDown={(e) => handleStampPointerDown(e, st)}
                   style={{ cursor: mode === 'select' ? 'grab' : 'pointer' }}
                 >
+                  <title>
+                    {[
+                      st.label || st.type.toUpperCase(),
+                      st.feature ? `Feature: ${st.feature}` : '',
+                      st.sensory ? `Atmosphere: ${st.sensory}` : '',
+                      st.hazard ? `Hazard: ${st.hazard}` : '',
+                      st.lore ? `Lore: ${st.lore}` : '',
+                    ]
+                      .filter(Boolean)
+                      .join('\n')}
+                  </title>
                   {/* Selection indicator ring */}
                   {isSelected && (
                     <circle
@@ -1669,7 +1704,7 @@ export const MapMakerView: React.FC<MapMakerViewProps> = ({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            maxWidth: '680px',
+            maxWidth: '740px',
             margin: '16px auto 0',
             boxShadow: 'var(--shadow-md)',
             flexWrap: 'wrap',
@@ -1952,6 +1987,197 @@ export const MapMakerView: React.FC<MapMakerViewProps> = ({
               )}
             </div>
           )}
+
+          {/* Landmark Lore & Worldbuilding Inspector */}
+          <div
+            style={{
+              width: '100%',
+              borderTop: '1px solid var(--line)',
+              paddingTop: '12px',
+              marginTop: '4px',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: '10px',
+                flexWrap: 'wrap',
+                gap: '6px',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Compass size={14} style={{ color: 'var(--accent)' }} />
+                <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--ink)' }}>
+                  Landmark Lore & Details
+                </span>
+                {(selectedStamp.feature || selectedStamp.sensory || selectedStamp.hazard) && (
+                  <span
+                    style={{
+                      fontSize: '0.68rem',
+                      padding: '1px 6px',
+                      borderRadius: '10px',
+                      background: 'rgba(62, 122, 140, 0.15)',
+                      color: 'var(--accent)',
+                      fontWeight: 600,
+                    }}
+                  >
+                    Muse Sparked
+                  </span>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <button
+                  className="action-btn-secondary"
+                  onClick={() => handleRollLoreForStamp(selectedStamp.id)}
+                  style={{ fontSize: '0.72rem', padding: '3px 8px', gap: '4px' }}
+                  title="Generate procedurally rolled lore, atmosphere, and hazards from Muse"
+                >
+                  <Dices size={12} />
+                  <span>🎲 Muse Spark</span>
+                </button>
+                <button
+                  className="action-btn-secondary"
+                  onClick={() => setIsEditingLore(!isEditingLore)}
+                  style={{ fontSize: '0.72rem', padding: '3px 8px', gap: '4px' }}
+                >
+                  <Edit2 size={12} />
+                  <span>{isEditingLore ? 'Done' : 'Edit Lore'}</span>
+                </button>
+              </div>
+            </div>
+
+            {isEditingLore ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: 'var(--bg)', padding: '10px', borderRadius: '8px', border: '1px solid var(--line)' }}>
+                <div>
+                  <label style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--muted)', display: 'block', marginBottom: '2px' }}>
+                    Dominant Feature
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. A colossal bridge of petrified bones spanning a vaporous chasm..."
+                    value={selectedStamp.feature || ''}
+                    onChange={(e) => handleUpdateStampDetails(selectedStamp.id, { feature: e.target.value })}
+                    style={{ width: '100%', padding: '5px 8px', fontSize: '0.8rem', background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: '5px', color: 'var(--ink)' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.72rem', fontWeight: 600, color: '#047857', display: 'block', marginBottom: '2px' }}>
+                    Sensory Atmosphere
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Smell of bitter ozone, wet slate, and wild mountain fennel..."
+                    value={selectedStamp.sensory || ''}
+                    onChange={(e) => handleUpdateStampDetails(selectedStamp.id, { sensory: e.target.value })}
+                    style={{ width: '100%', padding: '5px 8px', fontSize: '0.8rem', background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: '5px', color: 'var(--ink)' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.72rem', fontWeight: 600, color: '#b91c1c', display: 'block', marginBottom: '2px' }}>
+                    Perils & Hazards
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Collapsing masonry, toxic gas vents, territorial wyverns..."
+                    value={selectedStamp.hazard || ''}
+                    onChange={(e) => handleUpdateStampDetails(selectedStamp.id, { hazard: e.target.value })}
+                    style={{ width: '100%', padding: '5px 8px', fontSize: '0.8rem', background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: '5px', color: 'var(--ink)' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--muted)', display: 'block', marginBottom: '2px' }}>
+                    Lore, History & Secret Notes
+                  </label>
+                  <textarea
+                    rows={2}
+                    placeholder="History, ancient legends, hidden treasures, or dungeon master notes..."
+                    value={selectedStamp.lore || selectedStamp.description || ''}
+                    onChange={(e) => handleUpdateStampDetails(selectedStamp.id, { lore: e.target.value })}
+                    style={{ width: '100%', padding: '5px 8px', fontSize: '0.8rem', background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: '5px', color: 'var(--ink)', resize: 'vertical' }}
+                  />
+                </div>
+              </div>
+            ) : (selectedStamp.feature || selectedStamp.sensory || selectedStamp.hazard || selectedStamp.lore || selectedStamp.description) ? (
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '6px',
+                  background: 'var(--bg)',
+                  padding: '10px 12px',
+                  borderRadius: '8px',
+                  border: '1px solid var(--line)',
+                  fontSize: '0.8rem',
+                }}
+              >
+                {selectedStamp.feature && (
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+                    <Sparkles size={13} style={{ color: 'var(--accent)', marginTop: '3px', flexShrink: 0 }} />
+                    <div>
+                      <strong style={{ color: 'var(--ink)', marginRight: '4px' }}>Feature:</strong>
+                      <span style={{ color: 'var(--muted)', lineHeight: 1.4 }}>{selectedStamp.feature}</span>
+                    </div>
+                  </div>
+                )}
+                {selectedStamp.sensory && (
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+                    <Wind size={13} style={{ color: '#047857', marginTop: '3px', flexShrink: 0 }} />
+                    <div>
+                      <strong style={{ color: '#047857', marginRight: '4px' }}>Atmosphere:</strong>
+                      <span style={{ color: 'var(--muted)', lineHeight: 1.4 }}>{selectedStamp.sensory}</span>
+                    </div>
+                  </div>
+                )}
+                {selectedStamp.hazard && (
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+                    <Flame size={13} style={{ color: '#b91c1c', marginTop: '3px', flexShrink: 0 }} />
+                    <div>
+                      <strong style={{ color: '#b91c1c', marginRight: '4px' }}>Perils:</strong>
+                      <span style={{ color: 'var(--muted)', lineHeight: 1.4 }}>{selectedStamp.hazard}</span>
+                    </div>
+                  </div>
+                )}
+                {(selectedStamp.lore || selectedStamp.description) && (
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+                    <Book size={13} style={{ color: 'var(--accent)', marginTop: '3px', flexShrink: 0 }} />
+                    <div>
+                      <strong style={{ color: 'var(--ink)', marginRight: '4px' }}>Lore:</strong>
+                      <span style={{ color: 'var(--muted)', lineHeight: 1.4, whiteSpace: 'pre-wrap' }}>
+                        {selectedStamp.lore || selectedStamp.description}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div
+                style={{
+                  background: 'var(--bg)',
+                  padding: '8px 12px',
+                  borderRadius: '6px',
+                  border: '1px dashed var(--line)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '8px',
+                }}
+              >
+                <span style={{ fontSize: '0.76rem', color: 'var(--muted)' }}>
+                  No lore attached to this landmark yet.
+                </span>
+                <button
+                  className="chip"
+                  onClick={() => handleRollLoreForStamp(selectedStamp.id)}
+                  style={{ fontSize: '0.72rem', padding: '2px 8px', color: 'var(--accent)' }}
+                >
+                  🎲 Roll Muse Lore
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
