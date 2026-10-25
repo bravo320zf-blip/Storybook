@@ -15,7 +15,7 @@ export const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
         <div className="modal-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <HelpCircle size={18} style={{ color: 'var(--accent)' }} />
-            <h3 style={{ fontSize: '1.25rem' }}>Welcome to Inkling Studio</h3>
+            <h3 style={{ fontSize: '1.25rem' }}>Welcome to Storyboard Studio</h3>
           </div>
           <button className="icon-btn" onClick={onClose}>
             <X size={16} />
@@ -24,7 +24,7 @@ export const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
 
         <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           <p style={{ fontSize: '0.94rem', color: 'var(--ink)', lineHeight: 1.5 }}>
-            Inkling is an all-in-one novel writing and worldbuilding studio tailored for authors. Unlike co-writer tools, <b>the words are always, only yours</b>. Inkling is your memory and organization assistant.
+            Storyboard is an all-in-one novel writing and worldbuilding studio tailored for authors. Unlike co-writer tools, <b>the words are always, only yours</b>. Storyboard is your memory and organization assistant.
           </p>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>

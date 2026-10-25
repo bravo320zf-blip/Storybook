@@ -1,4 +1,5 @@
 import React from 'react';
+import { BrandLogo } from './BrandLogo';
 import {
   BookOpen,
   Library,
@@ -78,7 +79,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       items: [
         { id: 'review', label: 'Peer review', icon: MessageSquare },
         { id: 'submissions', label: 'Submissions', icon: Send },
-        { id: 'feedback', label: 'Dear Inkling', icon: Heart },
+        { id: 'feedback', label: 'Dear Storyboard', icon: Heart },
       ],
     },
   ];
@@ -87,8 +88,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     <aside className="app-sidebar">
       {/* Brand Header */}
       <div className="brand-header">
-        <img src="/icon.svg" alt="Inkling" className="brand-logo" />
-        <span className="brand-title">Inkling</span>
+        <BrandLogo size={28} />
+        <span className="brand-title">Storyboard</span>
         <span className="brand-badge">Studio</span>
       </div>
 

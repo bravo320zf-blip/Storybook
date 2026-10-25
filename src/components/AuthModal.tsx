@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { LogIn, UserPlus, X, Mail, Lock, User, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { BrandLogo } from './BrandLogo';
 import { signInWithEmail, signUpWithEmail, signInWithGoogle } from '../services/firebase';
 
 interface AuthModalProps {
@@ -82,9 +83,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       >
         <div className="modal-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <img src="/icon.svg" alt="Inkling" style={{ width: '22px', height: '22px' }} />
+            <BrandLogo size={24} />
             <h3 style={{ fontSize: '1.25rem' }}>
-              {mode === 'signin' ? 'Sign in to Inkling' : 'Create an Account'}
+              {mode === 'signin' ? 'Sign in to Storyboard' : 'Create an Account'}
             </h3>
           </div>
           <button className="icon-btn" onClick={onClose}>

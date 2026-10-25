@@ -162,7 +162,7 @@ export const SetupView: React.FC<SetupViewProps> = ({
                 }}
               />
               <p style={{ fontSize: '0.75rem', color: 'var(--muted)', marginTop: '4px' }}>
-                Inkling creates this folder automatically in your Google Drive root and saves all chapters, characters, and boards inside.
+                Storyboard creates this folder automatically in your Google Drive root and saves all chapters, characters, and boards inside.
               </p>
             </div>
 

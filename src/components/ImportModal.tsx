@@ -71,7 +71,7 @@ export const ImportModal: React.FC<ImportModalProps> = ({
 
         <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
           <p style={{ fontSize: '0.88rem', color: 'var(--muted)' }}>
-            Choose any <code>.txt</code> or <code>.md</code> manuscript file from your computer or Google Drive. Inkling preserves all headings and word counts.
+            Choose any <code>.txt</code> or <code>.md</code> manuscript file from your computer or Google Drive. Storyboard preserves all headings and word counts.
           </p>
 
           <label
@@ -138,7 +138,7 @@ export const ImportModal: React.FC<ImportModalProps> = ({
             disabled={!content.trim()}
           >
             <Check size={16} />
-            <span>Import to Inkling</span>
+            <span>Import to Storyboard</span>
           </button>
         </div>
       </div>

@@ -68,7 +68,7 @@ export async function getOrCreateFolder(accessToken: string, folderName: string 
     body: JSON.stringify({
       name: folderName,
       mimeType: 'application/vnd.google-apps.folder',
-      description: 'Inkling Writing Desk projects, manuscripts, and world notes',
+      description: 'Storyboard Writing Desk projects, manuscripts, and world notes',
     }),
   });
 
@@ -160,7 +160,7 @@ ${story.body || ''}
       name: fileName,
       parents: [folderId],
       mimeType: 'text/markdown',
-      description: `Inkling manuscript: ${story.title}`,
+      description: `Storyboard manuscript: ${story.title}`,
     };
 
     const boundary = '-------314159265358979323846';
@@ -281,7 +281,7 @@ export async function exportStoryboardToDrive(
   boardData: StoryboardData
 ): Promise<string> {
   const fileName = `${title} - Storyboard Outline.md`;
-  let markdown = `# ${title} — Storyboard Outline\n\nGenerated from Inkling Writing Studio\n\n`;
+  let markdown = `# ${title} — Storyboard Outline\n\nGenerated from Storyboard Writing Studio\n\n`;
 
   const kinds = ['beat', 'character', 'place', 'idea', 'note'] as const;
   const kindNames: Record<string, string> = {
