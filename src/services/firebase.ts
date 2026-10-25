@@ -25,12 +25,12 @@ import { Story, Character, StoryboardData, WorldMap, UserConfig } from '../types
 
 // Default configuration from environment or fallback
 const defaultFirebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || '',
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || '',
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || '',
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || '',
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || '',
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyDITwMz7VLiR-AayS121Ltx7wBwCMnQ05U',
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'inkling-writing-desk.firebaseapp.com',
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'inkling-writing-desk',
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'inkling-writing-desk.firebasestorage.app',
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '359467048952',
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || '1:359467048952:web:d35b31ca5155c9cfd2c00d',
 };
 
 let app: FirebaseApp | null = null;
