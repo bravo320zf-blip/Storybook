@@ -19,14 +19,32 @@ import {
   Maximize2,
   HelpCircle,
   FileDown,
+  BookOpen,
+  ChevronDown,
+  Copy,
+  Sliders,
+  ArrowRight,
+  Search,
+  Check,
+  Link2,
+  X,
 } from 'lucide-react';
-import { WorldMap, MapStamp, MapAspect, MapStyle, MapPath } from '../types';
+import { WorldMap, MapStamp, MapAspect, MapStyle, MapPath, Story, StoryboardData } from '../types';
 import { MapStampIcon } from '../utils/mapStamps';
 
 interface MapMakerViewProps {
   maps: WorldMap[];
+  activeMapId?: string;
+  onSelectMap?: (id: string) => void;
   onUpdateMaps: (updatedMaps: WorldMap[]) => void;
-  onSyncDrive: () => Promise<void>;
+  onCreateMap?: (initial?: Partial<WorldMap>) => void;
+  onDeleteMap?: (id: string) => void;
+  stories?: Story[];
+  storyboards?: StoryboardData[];
+  onOpenStoryboard?: (storyboardId: string) => void;
+  onCreateStoryboardForLocation?: (mapId: string, stampId: string, stampName: string) => void;
+  onSyncDrive?: () => Promise<void>;
+  onNavigateToStory?: (storyId: string, chapterId?: string) => void;
 }
 
 type ToolMode = 'stamp' | 'draw' | 'select';
@@ -80,20 +98,39 @@ const STAMP_CATEGORIES: StampCategory[] = [
 
 export const MapMakerView: React.FC<MapMakerViewProps> = ({
   maps,
+  activeMapId,
+  onSelectMap,
   onUpdateMaps,
+  onCreateMap,
+  onDeleteMap,
+  stories = [],
+  storyboards = [],
+  onOpenStoryboard,
+  onCreateStoryboardForLocation,
   onSyncDrive,
+  onNavigateToStory,
 }) => {
-  const currentMap = maps[0] || {
-    id: 'map-1',
-    name: 'The Realms of Eldoria',
-    kind: 'realm',
-    style: 'wash',
-    aspect: 'screen',
-    stamps: [],
-    paths: [],
-    realms: [],
-    updatedAt: Date.now(),
-  };
+  const [selectedMapId, setSelectedMapId] = useState<string>(
+    activeMapId || maps[0]?.id || 'map-1'
+  );
+
+  useEffect(() => {
+    if (activeMapId) setSelectedMapId(activeMapId);
+  }, [activeMapId]);
+
+  const currentMap =
+    maps.find((m) => m.id === selectedMapId) ||
+    maps[0] || {
+      id: 'map-1',
+      name: 'The Realms of Eldoria',
+      kind: 'realm',
+      style: 'wash',
+      aspect: 'screen',
+      stamps: [],
+      paths: [],
+      realms: [],
+      updatedAt: Date.now(),
+    };
 
   const [mode, setMode] = useState<ToolMode>('stamp');
   const [activeCategoryIndex, setActiveCategoryIndex] = useState(0);
@@ -120,6 +157,32 @@ export const MapMakerView: React.FC<MapMakerViewProps> = ({
   const [mapName, setMapName] = useState(currentMap.name || 'The Realms of Eldoria');
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+
+  // Multi-Map & Attachment Modals
+  const [isMapSelectorOpen, setIsMapSelectorOpen] = useState(false);
+  const [mapSearch, setMapSearch] = useState('');
+  const [isNewMapModalOpen, setIsNewMapModalOpen] = useState(false);
+  const [newMapTitle, setNewMapTitle] = useState('');
+  const [newMapStyle, setNewMapStyle] = useState<MapStyle>('wash');
+  const [newMapAspect, setNewMapAspect] = useState<MapAspect>('screen');
+  const [newMapStoryId, setNewMapStoryId] = useState('');
+  const [newMapChapterId, setNewMapChapterId] = useState('');
+
+  const [isAttachModalOpen, setIsAttachModalOpen] = useState(false);
+  const [attachStoryId, setAttachStoryId] = useState(currentMap.storyId || '');
+  const [attachChapterId, setAttachChapterId] = useState(currentMap.chapterId || '');
+
+  // Synchronize when currentMap changes
+  useEffect(() => {
+    setStyle(currentMap.style || 'wash');
+    setAspect(currentMap.aspect || 'screen');
+    setMapName(currentMap.name || 'The Realms of Eldoria');
+    setAttachStoryId(currentMap.storyId || '');
+    setAttachChapterId(currentMap.chapterId || '');
+    setHistory([currentMap]);
+    setHistoryIndex(0);
+    setSelectedStampId(null);
+  }, [currentMap.id]);
 
   const canvasRef = useRef<SVGSVGElement>(null);
 
@@ -197,9 +260,21 @@ export const MapMakerView: React.FC<MapMakerViewProps> = ({
 
   const currentTheme = bgStyles[style] || bgStyles.wash;
 
+  // Attached context resolution
+  const attachedStory = stories.find((s) => s.id === currentMap.storyId);
+  const attachedChapter = attachedStory?.chapters?.find((c) => c.id === currentMap.chapterId);
+
+  // Save map state in full maps array
+  const saveMap = (updated: WorldMap) => {
+    const updatedList = maps.some((m) => m.id === updated.id)
+      ? maps.map((m) => (m.id === updated.id ? updated : m))
+      : [...maps, updated];
+    onUpdateMaps(updatedList);
+  };
+
   // Save map and add to undo stack
   const commitMapUpdate = (updated: WorldMap) => {
-    onUpdateMaps([updated]);
+    saveMap(updated);
     const newHist = history.slice(0, historyIndex + 1);
     setHistory([...newHist, updated]);
     setHistoryIndex(newHist.length);
@@ -209,7 +284,7 @@ export const MapMakerView: React.FC<MapMakerViewProps> = ({
     if (historyIndex > 0) {
       const prev = history[historyIndex - 1];
       setHistoryIndex(historyIndex - 1);
-      onUpdateMaps([prev]);
+      saveMap(prev);
       setSelectedStampId(null);
     }
   };
@@ -218,9 +293,87 @@ export const MapMakerView: React.FC<MapMakerViewProps> = ({
     if (historyIndex < history.length - 1) {
       const next = history[historyIndex + 1];
       setHistoryIndex(historyIndex + 1);
-      onUpdateMaps([next]);
+      saveMap(next);
       setSelectedStampId(null);
     }
+  };
+
+  // Create new Map
+  const handleCreateNewMap = () => {
+    if (!newMapTitle.trim()) return;
+    const newId = `map-${Date.now()}`;
+    const newMap: WorldMap = {
+      id: newId,
+      name: newMapTitle.trim(),
+      kind: 'realm',
+      style: newMapStyle,
+      aspect: newMapAspect,
+      storyId: newMapStoryId || undefined,
+      chapterId: newMapChapterId || undefined,
+      stamps: [],
+      paths: [],
+      realms: [],
+      updatedAt: Date.now(),
+    };
+    if (onCreateMap) {
+      onCreateMap(newMap);
+    } else {
+      onUpdateMaps([...maps, newMap]);
+    }
+    setSelectedMapId(newId);
+    if (onSelectMap) onSelectMap(newId);
+    setIsNewMapModalOpen(false);
+    setNewMapTitle('');
+    setNewMapStoryId('');
+    setNewMapChapterId('');
+  };
+
+  // Duplicate current Map
+  const handleDuplicateMap = () => {
+    const newId = `map-${Date.now()}`;
+    const duplicated: WorldMap = {
+      ...currentMap,
+      id: newId,
+      name: `${currentMap.name} (Copy)`,
+      updatedAt: Date.now(),
+    };
+    if (onCreateMap) {
+      onCreateMap(duplicated);
+    } else {
+      onUpdateMaps([...maps, duplicated]);
+    }
+    setSelectedMapId(newId);
+    if (onSelectMap) onSelectMap(newId);
+    setIsMapSelectorOpen(false);
+  };
+
+  // Delete current Map
+  const handleDeleteMap = () => {
+    if (maps.length <= 1) {
+      alert('You must keep at least one map.');
+      return;
+    }
+    if (window.confirm(`Are you sure you want to delete map "${currentMap.name}"?`)) {
+      if (onDeleteMap) {
+        onDeleteMap(currentMap.id);
+      } else {
+        const remaining = maps.filter((m) => m.id !== currentMap.id);
+        onUpdateMaps(remaining);
+        setSelectedMapId(remaining[0]?.id || 'map-1');
+      }
+      setIsMapSelectorOpen(false);
+    }
+  };
+
+  // Save map attachment
+  const handleSaveMapAttachments = () => {
+    commitMapUpdate({
+      ...currentMap,
+      storyId: attachStoryId || undefined,
+      chapterId: attachChapterId || undefined,
+      updatedAt: Date.now(),
+    });
+    setIsAttachModalOpen(false);
   };
 
   // Convert client mouse/touch to SVG coordinates
@@ -289,7 +442,7 @@ export const MapMakerView: React.FC<MapMakerViewProps> = ({
         s.id === draggingStampId ? { ...s, x: newX, y: newY } : s
       );
 
-      onUpdateMaps([{ ...currentMap, stamps: updatedStamps, updatedAt: Date.now() }]);
+      saveMap({ ...currentMap, stamps: updatedStamps, updatedAt: Date.now() });
     }
   };
 
@@ -356,7 +509,7 @@ export const MapMakerView: React.FC<MapMakerViewProps> = ({
     const updatedStamps = (currentMap.stamps || []).map((s) =>
       s.id === selectedStampId ? { ...s, label } : s
     );
-    onUpdateMaps([{ ...currentMap, stamps: updatedStamps, updatedAt: Date.now() }]);
+    saveMap({ ...currentMap, stamps: updatedStamps, updatedAt: Date.now() });
   };
 
   // Clear Map
@@ -442,7 +595,7 @@ export const MapMakerView: React.FC<MapMakerViewProps> = ({
   const handleSyncDrive = async () => {
     setIsSyncing(true);
     try {
-      await onSyncDrive();
+      if (onSyncDrive) await onSyncDrive();
       alert('Map saved successfully to Google Drive!');
     } catch (err) {
       alert('Failed to sync map to Drive.');
@@ -480,12 +633,227 @@ export const MapMakerView: React.FC<MapMakerViewProps> = ({
           gap: '12px',
         }}
       >
-        <div>
-          <h1 style={{ fontFamily: 'var(--serif)', fontSize: '1.9rem', fontWeight: 600, color: 'var(--ink)' }}>
-            Map Maker
-          </h1>
-          <p style={{ color: 'var(--muted)', fontSize: '0.88rem' }}>
-            Hand-drawn fantasy atlas plates with castles, beasts, towers, roads, and winding rivers.
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+            {/* Map Selector Dropdown */}
+            <div style={{ position: 'relative' }}>
+              <button
+                className="action-btn-secondary"
+                onClick={() => setIsMapSelectorOpen(!isMapSelectorOpen)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  fontSize: '1.05rem',
+                  fontWeight: 700,
+                  fontFamily: 'var(--serif)',
+                  padding: '6px 14px',
+                  background: 'var(--panel)',
+                  borderColor: 'var(--line)',
+                  color: 'var(--ink)',
+                  boxShadow: 'var(--shadow-sm)',
+                }}
+              >
+                <Compass size={17} style={{ color: '#3E7A8C' }} />
+                <span>{currentMap.name}</span>
+                <span
+                  style={{
+                    fontSize: '0.72rem',
+                    background: 'var(--accent-soft)',
+                    color: 'var(--accent)',
+                    padding: '1px 6px',
+                    borderRadius: '10px',
+                    fontWeight: 600,
+                  }}
+                >
+                  {(currentMap.stamps || []).length} landmarks
+                </span>
+                <ChevronDown size={14} style={{ opacity: 0.6 }} />
+              </button>
+
+              {/* Map Selector Popover */}
+              {isMapSelectorOpen && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: 'calc(100% + 6px)',
+                    left: 0,
+                    width: '300px',
+                    maxHeight: '400px',
+                    background: 'var(--panel)',
+                    border: '1px solid var(--line)',
+                    borderRadius: '10px',
+                    boxShadow: 'var(--shadow-lg)',
+                    zIndex: 100,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    overflow: 'hidden',
+                  }}
+                >
+                  <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--line)' }}>
+                    <div style={{ position: 'relative' }}>
+                      <Search size={13} style={{ position: 'absolute', left: '8px', top: '8px', color: 'var(--muted)' }} />
+                      <input
+                        type="text"
+                        placeholder="Search maps..."
+                        value={mapSearch}
+                        onChange={(e) => setMapSearch(e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '5px 8px 5px 26px',
+                          fontSize: '0.8rem',
+                          background: 'var(--bg)',
+                          border: '1px solid var(--line)',
+                          borderRadius: '6px',
+                          color: 'var(--ink)',
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <div style={{ flex: 1, overflowY: 'auto', padding: '6px' }}>
+                    {maps
+                      .filter((m) => !mapSearch || m.name.toLowerCase().includes(mapSearch.toLowerCase()))
+                      .map((m) => {
+                        const mStory = stories.find((s) => s.id === m.storyId);
+                        const isCurrent = m.id === currentMap.id;
+
+                        return (
+                          <div
+                            key={m.id}
+                            onClick={() => {
+                              setSelectedMapId(m.id);
+                              if (onSelectMap) onSelectMap(m.id);
+                              setIsMapSelectorOpen(false);
+                            }}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              padding: '8px 10px',
+                              borderRadius: '6px',
+                              cursor: 'pointer',
+                              background: isCurrent ? 'var(--accent-soft)' : 'transparent',
+                              marginBottom: '2px',
+                            }}
+                          >
+                            <div style={{ minWidth: 0, flex: 1 }}>
+                              <div
+                                style={{
+                                  fontSize: '0.85rem',
+                                  fontWeight: isCurrent ? 700 : 500,
+                                  color: isCurrent ? 'var(--accent)' : 'var(--ink)',
+                                  whiteSpace: 'nowrap',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                }}
+                              >
+                                {m.name}
+                              </div>
+                              <div style={{ fontSize: '0.72rem', color: 'var(--muted)', marginTop: '2px' }}>
+                                {mStory ? `📖 ${mStory.title} · ` : ''}
+                                {(m.stamps || []).length} stamps · {m.style}
+                              </div>
+                            </div>
+                            {isCurrent && <Check size={14} style={{ color: 'var(--accent)', marginLeft: '6px' }} />}
+                          </div>
+                        );
+                      })}
+                  </div>
+
+                  <div
+                    style={{
+                      padding: '8px 10px',
+                      borderTop: '1px solid var(--line)',
+                      background: 'var(--bg)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '8px',
+                    }}
+                  >
+                    <button
+                      className="action-btn-primary"
+                      onClick={() => {
+                        setIsMapSelectorOpen(false);
+                        setIsNewMapModalOpen(true);
+                      }}
+                      style={{ fontSize: '0.78rem', padding: '4px 10px', flex: 1, justifyContent: 'center' }}
+                    >
+                      <Plus size={13} />
+                      <span>New Map</span>
+                    </button>
+                    <button
+                      className="icon-btn"
+                      onClick={handleDuplicateMap}
+                      title="Duplicate current Map"
+                      style={{ padding: '6px' }}
+                    >
+                      <Copy size={14} />
+                    </button>
+                    {maps.length > 1 && (
+                      <button
+                        className="icon-btn"
+                        onClick={handleDeleteMap}
+                        title="Delete current Map"
+                        style={{ padding: '6px', color: '#c53030' }}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Map Attachment Chip */}
+            <button
+              className="chip"
+              onClick={() => setIsAttachModalOpen(true)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                fontSize: '0.78rem',
+                background: currentMap.storyId ? 'var(--panel)' : 'var(--bg)',
+                borderColor: currentMap.storyId ? 'var(--accent)' : 'var(--line)',
+                color: currentMap.storyId ? 'var(--ink)' : 'var(--muted)',
+                cursor: 'pointer',
+              }}
+              title="Click to attach this Map to a Book or Chapter"
+            >
+              {attachedStory ? (
+                <>
+                  <BookOpen size={13} style={{ color: 'var(--accent)' }} />
+                  <span>
+                    Book: <b>{attachedStory.title}</b>
+                    {attachedChapter ? ` › ${attachedChapter.title}` : ''}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <Link2 size={13} />
+                  <span>Attach to Book</span>
+                </>
+              )}
+              <Sliders size={11} style={{ opacity: 0.5, marginLeft: '2px' }} />
+            </button>
+
+            {/* Quick jump link if attached to Story */}
+            {attachedStory && onNavigateToStory && (
+              <button
+                className="icon-btn"
+                onClick={() => onNavigateToStory(attachedStory.id, attachedChapter?.id)}
+                title={attachedChapter ? `Open ${attachedChapter.title} in Editor` : `Open ${attachedStory.title} in Editor`}
+                style={{ fontSize: '0.74rem', gap: '4px', padding: '4px 8px', color: 'var(--accent)' }}
+              >
+                <span>Edit Manuscript</span>
+                <ArrowRight size={12} />
+              </button>
+            )}
+          </div>
+          <p style={{ color: 'var(--muted)', fontSize: '0.84rem', margin: '0 0 0 2px' }}>
+            Chart castles, beast lairs, winding rivers, and attach narrative beats directly to locations.
           </p>
         </div>
 
@@ -1028,6 +1396,27 @@ export const MapMakerView: React.FC<MapMakerViewProps> = ({
                       {st.label}
                     </text>
                   )}
+
+                  {/* Attached Storyboard Indicator Badge */}
+                  {storyboards?.some((sb) => sb.mapId === currentMap.id && sb.locationId === st.id) && (
+                    <g
+                      transform={`translate(${size - 4}, -4)`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const sb = storyboards.find(
+                          (s) => s.mapId === currentMap.id && s.locationId === st.id
+                        );
+                        if (sb && onOpenStoryboard) onOpenStoryboard(sb.id);
+                      }}
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <title>Attached Storyboard: click to open</title>
+                      <circle cx="6" cy="6" r="7.5" fill="var(--panel)" stroke="var(--accent)" strokeWidth="1.6" />
+                      <text x="6" y="9" textAnchor="middle" fontSize="8" fontWeight="bold" fill="var(--accent)">
+                        📋
+                      </text>
+                    </g>
+                  )}
                 </g>
               );
             })}
@@ -1119,8 +1508,43 @@ export const MapMakerView: React.FC<MapMakerViewProps> = ({
             />
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '0.78rem', color: 'var(--muted)' }}>Size:</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            {/* Storyboard Button for this location */}
+            {storyboards?.some((sb) => sb.mapId === currentMap.id && sb.locationId === selectedStamp.id) ? (
+              <button
+                className="action-btn-primary"
+                onClick={() => {
+                  const sb = storyboards.find((s) => s.mapId === currentMap.id && s.locationId === selectedStamp.id);
+                  if (sb && onOpenStoryboard) onOpenStoryboard(sb.id);
+                }}
+                style={{ fontSize: '0.76rem', padding: '4px 10px', gap: '5px' }}
+                title="Open the storyboard for this location"
+              >
+                <Layers size={13} />
+                <span>Open Location Storyboard</span>
+                <ArrowRight size={12} />
+              </button>
+            ) : (
+              <button
+                className="action-btn-secondary"
+                onClick={() => {
+                  if (onCreateStoryboardForLocation) {
+                    onCreateStoryboardForLocation(
+                      currentMap.id,
+                      selectedStamp.id,
+                      selectedStamp.label || selectedStamp.type
+                    );
+                  }
+                }}
+                style={{ fontSize: '0.76rem', padding: '4px 10px', gap: '5px', color: 'var(--accent)', borderColor: 'var(--accent)' }}
+                title="Create a new storyboard linked to this location"
+              >
+                <Sparkles size={13} />
+                <span>+ Location Storyboard</span>
+              </button>
+            )}
+
+            <span style={{ fontSize: '0.78rem', color: 'var(--muted)', marginLeft: '4px' }}>Size:</span>
             <button
               className="action-btn-secondary"
               onClick={() => handleUpdateSelectedScale(-0.2)}
@@ -1188,6 +1612,270 @@ export const MapMakerView: React.FC<MapMakerViewProps> = ({
               >
                 Save Title
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* New Map Modal */}
+      {isNewMapModalOpen && (
+        <div className="modal-overlay" onClick={() => setIsNewMapModalOpen(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '480px' }}>
+            <div className="modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Compass size={18} style={{ color: '#3E7A8C' }} />
+                <h3 style={{ fontSize: '1.15rem' }}>Create New World Map</h3>
+              </div>
+              <button className="icon-btn" onClick={() => setIsNewMapModalOpen(false)}>
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <label style={{ fontSize: '0.78rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--muted)', display: 'block', marginBottom: '4px' }}>
+                  Map Name *
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Northern Kingdoms of Eldoria"
+                  value={newMapTitle}
+                  onChange={(e) => setNewMapTitle(e.target.value)}
+                  autoFocus
+                  style={{
+                    width: '100%',
+                    background: 'var(--bg)',
+                    border: '1px solid var(--line)',
+                    borderRadius: '6px',
+                    padding: '8px 12px',
+                    fontSize: '0.9rem',
+                    color: 'var(--ink)',
+                  }}
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div>
+                  <label style={{ fontSize: '0.78rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--muted)', display: 'block', marginBottom: '4px' }}>
+                    Art Style
+                  </label>
+                  <select
+                    value={newMapStyle}
+                    onChange={(e) => setNewMapStyle(e.target.value as MapStyle)}
+                    style={{
+                      width: '100%',
+                      padding: '7px 10px',
+                      background: 'var(--bg)',
+                      border: '1px solid var(--line)',
+                      borderRadius: '6px',
+                      fontSize: '0.84rem',
+                      color: 'var(--ink)',
+                    }}
+                  >
+                    <option value="wash">Classic Wash</option>
+                    <option value="parchment">Warm Parchment</option>
+                    <option value="night">Night Voyage</option>
+                    <option value="sylvan">Sylvan Forest</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ fontSize: '0.78rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--muted)', display: 'block', marginBottom: '4px' }}>
+                    Aspect Ratio
+                  </label>
+                  <select
+                    value={newMapAspect}
+                    onChange={(e) => setNewMapAspect(e.target.value as MapAspect)}
+                    style={{
+                      width: '100%',
+                      padding: '7px 10px',
+                      background: 'var(--bg)',
+                      border: '1px solid var(--line)',
+                      borderRadius: '6px',
+                      fontSize: '0.84rem',
+                      color: 'var(--ink)',
+                    }}
+                  >
+                    <option value="screen">Screen (16:10)</option>
+                    <option value="wide">Panoramic Wide</option>
+                    <option value="book">Book Page (Vertical)</option>
+                    <option value="poster">Poster Portrait</option>
+                    <option value="square">Square Plate</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Book & Chapter Attachment */}
+              <div style={{ padding: '10px', background: 'var(--panel)', borderRadius: '8px', border: '1px solid var(--line)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+                  <BookOpen size={14} style={{ color: 'var(--accent)' }} />
+                  <span style={{ fontSize: '0.82rem', fontWeight: 600 }}>Attach to Book & Chapter (Optional)</span>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <select
+                    value={newMapStoryId}
+                    onChange={(e) => {
+                      setNewMapStoryId(e.target.value);
+                      setNewMapChapterId('');
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '6px 10px',
+                      background: 'var(--bg)',
+                      border: '1px solid var(--line)',
+                      borderRadius: '6px',
+                      fontSize: '0.84rem',
+                      color: 'var(--ink)',
+                    }}
+                  >
+                    <option value="">-- No Book (Standalone Map) --</option>
+                    {stories.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        📖 {s.title}
+                      </option>
+                    ))}
+                  </select>
+
+                  {newMapStoryId && (
+                    <select
+                      value={newMapChapterId}
+                      onChange={(e) => setNewMapChapterId(e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '6px 10px',
+                        background: 'var(--bg)',
+                        border: '1px solid var(--line)',
+                        borderRadius: '6px',
+                        fontSize: '0.84rem',
+                        color: 'var(--ink)',
+                      }}
+                    >
+                      <option value="">Whole Book (All Chapters)</option>
+                      {(stories.find((s) => s.id === newMapStoryId)?.chapters || []).map((c) => (
+                        <option key={c.id} value={c.id}>
+                          📑 Chapter: {c.title}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="modal-footer">
+              <button className="action-btn-secondary" onClick={() => setIsNewMapModalOpen(false)}>
+                Cancel
+              </button>
+              <button
+                className="action-btn-primary"
+                onClick={handleCreateNewMap}
+                disabled={!newMapTitle.trim()}
+              >
+                Create Map
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Map Attachments Modal */}
+      {isAttachModalOpen && (
+        <div className="modal-overlay" onClick={() => setIsAttachModalOpen(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '480px' }}>
+            <div className="modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Sliders size={18} style={{ color: '#3E7A8C' }} />
+                <h3 style={{ fontSize: '1.15rem' }}>Map Attachments & Links</h3>
+              </div>
+              <button className="icon-btn" onClick={() => setIsAttachModalOpen(false)}>
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <p style={{ fontSize: '0.84rem', color: 'var(--muted)' }}>
+                Attach <b>"{currentMap.name}"</b> to a specific story or chapter so it appears automatically when writing.
+              </p>
+
+              <div style={{ padding: '12px', background: 'var(--panel)', borderRadius: '8px', border: '1px solid var(--line)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+                  <BookOpen size={15} style={{ color: 'var(--accent)' }} />
+                  <span style={{ fontSize: '0.84rem', fontWeight: 600 }}>Attached Book & Chapter</span>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <select
+                    value={attachStoryId}
+                    onChange={(e) => {
+                      setAttachStoryId(e.target.value);
+                      setAttachChapterId('');
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '7px 10px',
+                      background: 'var(--bg)',
+                      border: '1px solid var(--line)',
+                      borderRadius: '6px',
+                      fontSize: '0.84rem',
+                      color: 'var(--ink)',
+                    }}
+                  >
+                    <option value="">-- No Book (Standalone Map) --</option>
+                    {stories.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        📖 {s.title}
+                      </option>
+                    ))}
+                  </select>
+
+                  {attachStoryId && (
+                    <select
+                      value={attachChapterId}
+                      onChange={(e) => setAttachChapterId(e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '7px 10px',
+                        background: 'var(--bg)',
+                        border: '1px solid var(--line)',
+                        borderRadius: '6px',
+                        fontSize: '0.84rem',
+                        color: 'var(--ink)',
+                      }}
+                    >
+                      <option value="">Whole Book (All Chapters)</option>
+                      {(stories.find((s) => s.id === attachStoryId)?.chapters || []).map((c) => (
+                        <option key={c.id} value={c.id}>
+                          📑 Chapter: {c.title}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="modal-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <button
+                type="button"
+                className="action-btn-secondary"
+                onClick={() => {
+                  setAttachStoryId('');
+                  setAttachChapterId('');
+                }}
+                style={{ fontSize: '0.78rem', color: 'var(--muted)' }}
+              >
+                Unlink (Make Standalone)
+              </button>
+
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button className="action-btn-secondary" onClick={() => setIsAttachModalOpen(false)}>
+                  Cancel
+                </button>
+                <button className="action-btn-primary" onClick={handleSaveMapAttachments}>
+                  Save Attachments
+                </button>
+              </div>
             </div>
           </div>
         </div>

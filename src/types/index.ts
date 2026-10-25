@@ -76,8 +76,17 @@ export interface StoryboardLink {
 }
 
 export interface StoryboardData {
+  id: string;
+  title: string;
+  description?: string;
   cards: StoryboardCard[];
   links: StoryboardLink[];
+  updatedAt: number;
+  // Attachment associations
+  storyId?: string;     // Attached to a specific Book/Story
+  chapterId?: string;   // Attached to a specific Chapter in that Book
+  mapId?: string;       // Attached to a specific Map
+  locationId?: string;  // Attached to a specific Location/Stamp on that Map
 }
 
 export interface Character {
@@ -113,6 +122,7 @@ export interface MapStamp {
   rotation?: number;
   label?: string;
   color?: string;
+  storyboardId?: string; // Direct link to an attached storyboard
 }
 
 export interface MapPath {
@@ -137,6 +147,7 @@ export interface WorldMap {
   style: MapStyle;
   aspect: MapAspect;
   storyId?: string;
+  chapterId?: string;
   stamps: MapStamp[];
   paths?: MapPath[];
   realms: MapRealm[];

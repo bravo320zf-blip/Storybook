@@ -25,6 +25,10 @@ import {
   Split,
   X,
   Upload,
+  Compass,
+  MapPin,
+  ArrowRight,
+  ExternalLink,
 } from 'lucide-react';
 import { Story, Character, StoryboardData, WorldMap, BookChapter, BookPage, StoryStatus } from '../types';
 import { MapStampIcon } from '../utils/mapStamps';
@@ -43,7 +47,8 @@ import { saveStoryToDrive } from '../services/googleDrive';
 interface EditorViewProps {
   story: Story;
   characters: Character[];
-  storyboard: StoryboardData;
+  storyboard?: StoryboardData;
+  storyboards?: StoryboardData[];
   maps: WorldMap[];
   onBack: () => void;
   onUpdateStory: (updatedStory: Story) => void;
@@ -52,12 +57,17 @@ interface EditorViewProps {
   driveFolderName: string;
   googleAccessToken?: string;
   driveFolderId?: string;
+  onNavigateToStoryboard?: (storyboardId: string) => void;
+  onCreateStoryboardForContext?: (initial: Partial<StoryboardData>) => void;
+  onNavigateToMap?: (mapId: string) => void;
+  onCreateMapForContext?: (initial: Partial<WorldMap>) => void;
 }
 
 export const EditorView: React.FC<EditorViewProps> = ({
   story,
   characters,
   storyboard,
+  storyboards = [],
   maps,
   onBack,
   onUpdateStory,
@@ -66,6 +76,10 @@ export const EditorView: React.FC<EditorViewProps> = ({
   driveFolderName,
   googleAccessToken,
   driveFolderId,
+  onNavigateToStoryboard,
+  onCreateStoryboardForContext,
+  onNavigateToMap,
+  onCreateMapForContext,
 }) => {
   // Book Metadata
   const [bookTitle, setBookTitle] = useState(story.title || 'Untitled Book');
@@ -1402,66 +1416,291 @@ export const EditorView: React.FC<EditorViewProps> = ({
           )}
 
           {/* Storyboard Tab */}
-          {activeDrawerTab === 'storyboard' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              <span style={{ fontSize: '0.8rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--muted)' }}>
-                Storyboard Beats ({storyboard.cards.length})
-              </span>
-              {storyboard.cards.length === 0 ? (
-                <p style={{ fontSize: '0.82rem', color: 'var(--muted)' }}>
-                  Your corkboard is empty. Head to Storyboard to pin scenes and plot beats.
-                </p>
-              ) : (
-                storyboard.cards.map((card) => (
-                  <div
-                    key={card.id}
-                    style={{
-                      padding: '8px 10px',
-                      background: 'var(--bg)',
-                      border: '1px solid var(--line)',
-                      borderRadius: '6px',
-                    }}
-                  >
-                    <div style={{ fontSize: '0.84rem', fontWeight: 600 }}>{card.title}</div>
-                    <div style={{ fontSize: '0.76rem', color: 'var(--muted)', marginTop: '2px' }}>
-                      {card.body}
+          {activeDrawerTab === 'storyboard' && (() => {
+            const storyboardsList = storyboards.length > 0 ? storyboards : storyboard ? [storyboard] : [];
+            const chapterStoryboard = storyboardsList.find(
+              (sb) => sb.storyId === story.id && sb.chapterId === activeChapter?.id
+            );
+            const bookStoryboard = storyboardsList.find(
+              (sb) => sb.storyId === story.id && !sb.chapterId
+            );
+
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                {/* Active Chapter Storyboard Section */}
+                <div style={{ padding: '10px', background: 'var(--panel)', borderRadius: '8px', border: '1px solid var(--line)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Layers size={14} style={{ color: 'var(--accent)' }} />
+                      <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--ink)' }}>
+                        Chapter Storyboard: {activeChapter?.title}
+                      </span>
                     </div>
                   </div>
-                ))
-              )}
-            </div>
-          )}
+
+                  {chapterStoryboard ? (
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                        <span style={{ fontSize: '0.74rem', color: 'var(--muted)' }}>
+                          {chapterStoryboard.cards.length} planned beats
+                        </span>
+                        <button
+                          className="action-btn-primary"
+                          onClick={() => onNavigateToStoryboard && onNavigateToStoryboard(chapterStoryboard.id)}
+                          style={{ fontSize: '0.72rem', padding: '3px 8px', gap: '4px' }}
+                        >
+                          <span>Open Storyboard</span>
+                          <ArrowRight size={11} />
+                        </button>
+                      </div>
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        {chapterStoryboard.cards.length === 0 ? (
+                          <p style={{ fontSize: '0.78rem', color: 'var(--muted)' }}>
+                            No cards in this chapter storyboard yet.
+                          </p>
+                        ) : (
+                          chapterStoryboard.cards.map((c) => (
+                            <div
+                              key={c.id}
+                              style={{
+                                padding: '6px 8px',
+                                background: 'var(--bg)',
+                                border: '1px solid var(--line)',
+                                borderRadius: '6px',
+                                borderLeft: `3px solid ${c.color || 'var(--accent)'}`,
+                              }}
+                            >
+                              <div style={{ fontSize: '0.8rem', fontWeight: 600 }}>{c.title}</div>
+                              {c.body && (
+                                <div style={{ fontSize: '0.74rem', color: 'var(--muted)', marginTop: '2px', whiteSpace: 'pre-wrap' }}>
+                                  {c.body}
+                                </div>
+                              )}
+                              {c.tag && (
+                                <span style={{ fontSize: '0.68rem', background: 'var(--panel)', padding: '1px 5px', borderRadius: '4px', marginTop: '4px', display: 'inline-block' }}>
+                                  {c.tag}
+                                </span>
+                              )}
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      <p style={{ fontSize: '0.78rem', color: 'var(--muted)', marginBottom: '8px' }}>
+                        No dedicated storyboard attached to this chapter yet.
+                      </p>
+                      <button
+                        className="action-btn-secondary"
+                        onClick={() => {
+                          if (onCreateStoryboardForContext) {
+                            onCreateStoryboardForContext({
+                              title: `${activeChapter?.title || 'Chapter'} - Storyboard`,
+                              storyId: story.id,
+                              chapterId: activeChapter?.id,
+                            });
+                          }
+                        }}
+                        style={{ fontSize: '0.75rem', width: '100%', justifyContent: 'center', gap: '4px' }}
+                      >
+                        <Plus size={13} />
+                        <span>Create Chapter Storyboard</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Book Master Storyboard Section */}
+                <div style={{ padding: '10px', background: 'var(--panel)', borderRadius: '8px', border: '1px solid var(--line)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Book size={14} style={{ color: 'var(--accent)' }} />
+                      <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--ink)' }}>
+                        Book Storyboard: {story.title}
+                      </span>
+                    </div>
+                  </div>
+
+                  {bookStoryboard ? (
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                        <span style={{ fontSize: '0.74rem', color: 'var(--muted)' }}>
+                          {bookStoryboard.cards.length} story beats
+                        </span>
+                        <button
+                          className="action-btn-secondary"
+                          onClick={() => onNavigateToStoryboard && onNavigateToStoryboard(bookStoryboard.id)}
+                          style={{ fontSize: '0.72rem', padding: '3px 8px', gap: '4px' }}
+                        >
+                          <span>Open Storyboard</span>
+                          <ArrowRight size={11} />
+                        </button>
+                      </div>
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        {bookStoryboard.cards.slice(0, 5).map((c) => (
+                          <div
+                            key={c.id}
+                            style={{
+                              padding: '6px 8px',
+                              background: 'var(--bg)',
+                              border: '1px solid var(--line)',
+                              borderRadius: '6px',
+                            }}
+                          >
+                            <div style={{ fontSize: '0.8rem', fontWeight: 600 }}>{c.title}</div>
+                            {c.body && (
+                              <div style={{ fontSize: '0.74rem', color: 'var(--muted)', marginTop: '2px' }}>
+                                {c.body.slice(0, 80)}...
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      <p style={{ fontSize: '0.78rem', color: 'var(--muted)', marginBottom: '8px' }}>
+                        No full book storyboard attached yet.
+                      </p>
+                      <button
+                        className="action-btn-secondary"
+                        onClick={() => {
+                          if (onCreateStoryboardForContext) {
+                            onCreateStoryboardForContext({
+                              title: `${story.title} - Main Storyboard`,
+                              storyId: story.id,
+                            });
+                          }
+                        }}
+                        style={{ fontSize: '0.75rem', width: '100%', justifyContent: 'center', gap: '4px' }}
+                      >
+                        <Plus size={13} />
+                        <span>Create Book Storyboard</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Map Tab */}
-          {activeDrawerTab === 'map' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              <span style={{ fontSize: '0.8rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--muted)' }}>
-                World Maps ({maps.length})
-              </span>
-              {maps.length === 0 ? (
-                <p style={{ fontSize: '0.82rem', color: 'var(--muted)' }}>
-                  No maps drawn yet. Use Map Maker to chart realms and fortresses.
-                </p>
-              ) : (
-                maps.map((m) => (
-                  <div
-                    key={m.id}
-                    style={{
-                      padding: '10px',
-                      background: 'var(--bg)',
-                      border: '1px solid var(--line)',
-                      borderRadius: '6px',
+          {activeDrawerTab === 'map' && (() => {
+            const chapterMaps = maps.filter((m) => m.storyId === story.id && m.chapterId === activeChapter?.id);
+            const bookMaps = maps.filter((m) => m.storyId === story.id && !m.chapterId);
+            const otherMaps = maps.filter((m) => m.storyId !== story.id);
+            const attachedMaps = [...chapterMaps, ...bookMaps];
+
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: '0.8rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--muted)' }}>
+                    Attached Maps ({attachedMaps.length})
+                  </span>
+                  <button
+                    className="action-btn-secondary"
+                    onClick={() => {
+                      if (onCreateMapForContext) {
+                        onCreateMapForContext({
+                          name: `${story.title} Realm Map`,
+                          storyId: story.id,
+                          chapterId: activeChapter?.id,
+                        });
+                      }
                     }}
+                    style={{ fontSize: '0.72rem', padding: '3px 8px', gap: '4px' }}
                   >
-                    <div style={{ fontSize: '0.88rem', fontWeight: 600 }}>{m.name}</div>
-                    <div style={{ fontSize: '0.74rem', color: 'var(--muted)', marginTop: '2px' }}>
-                      {m.stamps.length} landmark stamps · {m.style} style
+                    <Plus size={11} />
+                    <span>New Map</span>
+                  </button>
+                </div>
+
+                {attachedMaps.length === 0 ? (
+                  <div style={{ padding: '12px', background: 'var(--panel)', borderRadius: '8px', border: '1px solid var(--line)', textAlign: 'center' }}>
+                    <p style={{ fontSize: '0.82rem', color: 'var(--muted)', marginBottom: '8px' }}>
+                      No maps attached to "{story.title}" yet.
+                    </p>
+                    <button
+                      className="action-btn-primary"
+                      onClick={() => {
+                        if (onCreateMapForContext) {
+                          onCreateMapForContext({
+                            name: `${story.title} Atlas`,
+                            storyId: story.id,
+                          });
+                        }
+                      }}
+                      style={{ fontSize: '0.75rem', padding: '4px 10px', margin: '0 auto' }}
+                    >
+                      <Plus size={12} />
+                      <span>Create Map for this Book</span>
+                    </button>
+                  </div>
+                ) : (
+                  attachedMaps.map((m) => (
+                    <div
+                      key={m.id}
+                      style={{
+                        padding: '10px',
+                        background: 'var(--bg)',
+                        border: '1px solid var(--line)',
+                        borderRadius: '8px',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div style={{ fontSize: '0.88rem', fontWeight: 600 }}>{m.name}</div>
+                        <button
+                          className="action-btn-primary"
+                          onClick={() => onNavigateToMap && onNavigateToMap(m.id)}
+                          style={{ fontSize: '0.72rem', padding: '3px 8px', gap: '4px' }}
+                        >
+                          <span>Open Map</span>
+                          <ArrowRight size={11} />
+                        </button>
+                      </div>
+                      <div style={{ fontSize: '0.74rem', color: 'var(--muted)', marginTop: '4px' }}>
+                        {(m.stamps || []).length} landmark stamps · {m.style} style
+                        {m.chapterId && ' · Attached to Chapter'}
+                      </div>
+                    </div>
+                  ))
+                )}
+
+                {/* Other World Maps */}
+                {otherMaps.length > 0 && (
+                  <div style={{ marginTop: '10px' }}>
+                    <span style={{ fontSize: '0.74rem', fontWeight: 600, color: 'var(--muted)', display: 'block', marginBottom: '6px' }}>
+                      Other World Maps:
+                    </span>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      {otherMaps.map((m) => (
+                        <div
+                          key={m.id}
+                          onClick={() => onNavigateToMap && onNavigateToMap(m.id)}
+                          style={{
+                            padding: '6px 8px',
+                            background: 'var(--panel)',
+                            border: '1px solid var(--line)',
+                            borderRadius: '6px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <span style={{ fontSize: '0.8rem' }}>{m.name}</span>
+                          <ArrowRight size={12} style={{ color: 'var(--muted)' }} />
+                        </div>
+                      ))}
                     </div>
                   </div>
-                ))
-              )}
-            </div>
-          )}
+                )}
+              </div>
+            );
+          })()}
           </aside>
         </>
       )}

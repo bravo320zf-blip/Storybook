@@ -22,14 +22,35 @@ import {
   Tag,
   Palette,
   Play,
+  BookOpen,
+  Compass,
+  MapPin,
+  ChevronDown,
+  Copy,
+  Sliders,
+  Layers,
+  ArrowRight,
+  Check,
+  Search,
+  Link2,
 } from 'lucide-react';
-import { StoryboardData, StoryboardCard, StoryboardLink, CardKind } from '../types';
+import { StoryboardData, StoryboardCard, StoryboardLink, CardKind, Story, WorldMap } from '../types';
 
 interface StoryboardViewProps {
-  boardData: StoryboardData;
-  onUpdateBoard: (newBoard: StoryboardData) => void;
-  onExportToDrive: (title: string, data: StoryboardData) => Promise<void>;
-  driveFolderName: string;
+  boardData?: StoryboardData;
+  onUpdateBoard?: (newBoard: StoryboardData) => void;
+  storyboards?: StoryboardData[];
+  activeStoryboardId?: string;
+  onSelectStoryboard?: (id: string) => void;
+  onCreateStoryboard?: (initial?: Partial<StoryboardData>) => void;
+  onUpdateStoryboard?: (updated: StoryboardData) => void;
+  onDeleteStoryboard?: (id: string) => void;
+  stories?: Story[];
+  maps?: WorldMap[];
+  onNavigateToStory?: (storyId: string, chapterId?: string) => void;
+  onNavigateToMap?: (mapId: string, stampId?: string) => void;
+  onExportToDrive?: (title: string, data: StoryboardData) => Promise<void>;
+  driveFolderName?: string;
 }
 
 const CARD_COLORS: Record<CardKind, { label: string; color: string; tint: string }> = {
@@ -81,9 +102,54 @@ function extractYouTubeId(url: string): string | null {
 export const StoryboardView: React.FC<StoryboardViewProps> = ({
   boardData,
   onUpdateBoard,
+  storyboards = [],
+  activeStoryboardId,
+  onSelectStoryboard,
+  onCreateStoryboard,
+  onUpdateStoryboard,
+  onDeleteStoryboard,
+  stories = [],
+  maps = [],
+  onNavigateToStory,
+  onNavigateToMap,
   onExportToDrive,
   driveFolderName,
 }) => {
+  // Resolve list of boards: prefer storyboards prop, fallback to boardData, fallback to default
+  const fallbackBoard: StoryboardData = {
+    id: 'sb-default',
+    title: 'Main Storyboard',
+    description: 'Master plot threads, beats, and scene cards',
+    cards: [],
+    links: [],
+    updatedAt: Date.now(),
+  };
+
+  const boardsList: StoryboardData[] =
+    storyboards.length > 0
+      ? storyboards
+      : boardData
+      ? [boardData]
+      : [fallbackBoard];
+
+  const currentBoardId = activeStoryboardId || boardsList[0]?.id || 'sb-default';
+  const currentBoard: StoryboardData =
+    boardsList.find((b) => b.id === currentBoardId) || boardsList[0] || fallbackBoard;
+
+  const saveBoard = (updates: Partial<StoryboardData>) => {
+    const updated: StoryboardData = {
+      ...currentBoard,
+      ...updates,
+      updatedAt: Date.now(),
+    };
+    if (onUpdateStoryboard) {
+      onUpdateStoryboard(updated);
+    }
+    if (onUpdateBoard) {
+      onUpdateBoard(updated);
+    }
+  };
+
   const [draggingCardId, setDraggingCardId] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [isExporting, setIsExporting] = useState(false);
@@ -96,7 +162,119 @@ export const StoryboardView: React.FC<StoryboardViewProps> = ({
   const [activeMediaInput, setActiveMediaInput] = useState<{ cardId: string; type: 'youtube' | 'image' } | null>(null);
   const [mediaUrlInput, setMediaUrlInput] = useState('');
 
+  // Multi-Storyboard Management State
+  const [isBoardSelectorOpen, setIsBoardSelectorOpen] = useState(false);
+  const [boardFilter, setBoardFilter] = useState<'all' | 'books' | 'maps' | 'standalone'>('all');
+  const [boardSearch, setBoardSearch] = useState('');
+
+  // New Board Modal
+  const [isNewBoardModalOpen, setIsNewBoardModalOpen] = useState(false);
+  const [newTitle, setNewTitle] = useState('');
+  const [newDesc, setNewDesc] = useState('');
+  const [newStoryId, setNewStoryId] = useState('');
+  const [newChapterId, setNewChapterId] = useState('');
+  const [newMapId, setNewMapId] = useState('');
+  const [newLocationId, setNewLocationId] = useState('');
+
+  // Attachment / Link Modal
+  const [isAttachModalOpen, setIsAttachModalOpen] = useState(false);
+  const [attachTitle, setAttachTitle] = useState(currentBoard.title || '');
+  const [attachStoryId, setAttachStoryId] = useState(currentBoard.storyId || '');
+  const [attachChapterId, setAttachChapterId] = useState(currentBoard.chapterId || '');
+  const [attachMapId, setAttachMapId] = useState(currentBoard.mapId || '');
+  const [attachLocationId, setAttachLocationId] = useState(currentBoard.locationId || '');
+
+  // Keep attach modal in sync when board changes
+  useEffect(() => {
+    setAttachTitle(currentBoard.title || '');
+    setAttachStoryId(currentBoard.storyId || '');
+    setAttachChapterId(currentBoard.chapterId || '');
+    setAttachMapId(currentBoard.mapId || '');
+    setAttachLocationId(currentBoard.locationId || '');
+  }, [currentBoard.id]);
+
   const boardRef = useRef<HTMLDivElement>(null);
+
+  // Resolved context attachments
+  const attachedStory = stories.find((s) => s.id === currentBoard.storyId);
+  const attachedChapter = attachedStory?.chapters?.find((c) => c.id === currentBoard.chapterId);
+  const attachedMap = maps.find((m) => m.id === currentBoard.mapId);
+  const attachedStamp = attachedMap?.stamps?.find((st) => st.id === currentBoard.locationId);
+
+  // Create a new Storyboard
+  const handleCreateBoard = () => {
+    if (!newTitle.trim()) return;
+    const newId = `sb-${Date.now()}`;
+    const newBoard: StoryboardData = {
+      id: newId,
+      title: newTitle.trim(),
+      description: newDesc.trim() || undefined,
+      cards: [],
+      links: [],
+      updatedAt: Date.now(),
+      storyId: newStoryId || undefined,
+      chapterId: newChapterId || undefined,
+      mapId: newMapId || undefined,
+      locationId: newLocationId || undefined,
+    };
+    if (onCreateStoryboard) {
+      onCreateStoryboard(newBoard);
+    }
+    if (onSelectStoryboard) {
+      onSelectStoryboard(newId);
+    }
+    setIsNewBoardModalOpen(false);
+    setNewTitle('');
+    setNewDesc('');
+    setNewStoryId('');
+    setNewChapterId('');
+    setNewMapId('');
+    setNewLocationId('');
+  };
+
+  // Duplicate current Storyboard
+  const handleDuplicateBoard = () => {
+    const newId = `sb-${Date.now()}`;
+    const duplicated: StoryboardData = {
+      ...currentBoard,
+      id: newId,
+      title: `${currentBoard.title} (Copy)`,
+      updatedAt: Date.now(),
+    };
+    if (onCreateStoryboard) {
+      onCreateStoryboard(duplicated);
+    }
+    if (onSelectStoryboard) {
+      onSelectStoryboard(newId);
+    }
+    setIsBoardSelectorOpen(false);
+  };
+
+  // Delete current Storyboard
+  const handleDeleteCurrentBoard = () => {
+    if (boardsList.length <= 1) {
+      alert('You must keep at least one Storyboard.');
+      return;
+    }
+    if (window.confirm(`Are you sure you want to delete storyboard "${currentBoard.title}"?`)) {
+      if (onDeleteStoryboard) {
+        onDeleteStoryboard(currentBoard.id);
+      }
+      setIsBoardSelectorOpen(false);
+    }
+  };
+
+  // Save attachments
+  const handleSaveAttachments = () => {
+    saveBoard({
+      title: attachTitle.trim() || currentBoard.title,
+      storyId: attachStoryId || undefined,
+      chapterId: attachChapterId || undefined,
+      mapId: attachMapId || undefined,
+      locationId: attachLocationId || undefined,
+    });
+    setIsAttachModalOpen(false);
+  };
 
   // Add a new card to the canvas
   const handleAddCard = (kind: CardKind) => {
@@ -112,33 +290,30 @@ export const StoryboardView: React.FC<StoryboardViewProps> = ({
       color: CARD_COLORS[kind]?.color || '#ECE4D7',
     };
 
-    onUpdateBoard({
-      ...boardData,
-      cards: [...boardData.cards, newCard],
+    saveBoard({
+      cards: [...currentBoard.cards, newCard],
     });
   };
 
   // Delete card
   const handleDeleteCard = (cardId: string) => {
-    onUpdateBoard({
-      cards: boardData.cards.filter((c) => c.id !== cardId),
-      links: boardData.links.filter((l) => l.fromId !== cardId && l.toId !== cardId),
+    saveBoard({
+      cards: currentBoard.cards.filter((c) => c.id !== cardId),
+      links: currentBoard.links.filter((l) => l.fromId !== cardId && l.toId !== cardId),
     });
   };
 
   // Delete specific connection link
   const handleDeleteLink = (linkId: string) => {
-    onUpdateBoard({
-      ...boardData,
-      links: boardData.links.filter((l) => l.id !== linkId),
+    saveBoard({
+      links: currentBoard.links.filter((l) => l.id !== linkId),
     });
   };
 
   // Update card content
   const handleCardChange = (cardId: string, updates: Partial<StoryboardCard>) => {
-    onUpdateBoard({
-      ...boardData,
-      cards: boardData.cards.map((c) => (c.id === cardId ? { ...c, ...updates } : c)),
+    saveBoard({
+      cards: currentBoard.cards.map((c) => (c.id === cardId ? { ...c, ...updates } : c)),
     });
   };
 
@@ -179,7 +354,7 @@ export const StoryboardView: React.FC<StoryboardViewProps> = ({
 
   // Toggle checklist item
   const handleToggleChecklist = (cardId: string, itemIndex: number) => {
-    const targetCard = boardData.cards.find((c) => c.id === cardId);
+    const targetCard = currentBoard.cards.find((c) => c.id === cardId);
     if (!targetCard) return;
 
     const checklist = [...(targetCard.checklist || [])];
@@ -191,7 +366,7 @@ export const StoryboardView: React.FC<StoryboardViewProps> = ({
 
   // Add checklist item
   const handleAddChecklistItem = (cardId: string) => {
-    const targetCard = boardData.cards.find((c) => c.id === cardId);
+    const targetCard = currentBoard.cards.find((c) => c.id === cardId);
     if (!targetCard) return;
 
     const checklist = [
@@ -226,9 +401,8 @@ export const StoryboardView: React.FC<StoryboardViewProps> = ({
     const newX = Math.max(10, (e.clientX - boardRect.left) / zoomScale - dragOffset.x);
     const newY = Math.max(10, (e.clientY - boardRect.top) / zoomScale - dragOffset.y);
 
-    onUpdateBoard({
-      ...boardData,
-      cards: boardData.cards.map((c) =>
+    saveBoard({
+      cards: currentBoard.cards.map((c) =>
         c.id === draggingCardId ? { ...c, x: Math.round(newX), y: Math.round(newY) } : c
       ),
     });
@@ -243,8 +417,7 @@ export const StoryboardView: React.FC<StoryboardViewProps> = ({
     if (!connectingFromId) {
       setConnectingFromId(cardId);
     } else if (connectingFromId !== cardId) {
-      // Check if already linked
-      const alreadyLinked = boardData.links.some(
+      const alreadyLinked = currentBoard.links.some(
         (l) => (l.fromId === connectingFromId && l.toId === cardId) || (l.fromId === cardId && l.toId === connectingFromId)
       );
 
@@ -254,9 +427,8 @@ export const StoryboardView: React.FC<StoryboardViewProps> = ({
           fromId: connectingFromId,
           toId: cardId,
         };
-        onUpdateBoard({
-          ...boardData,
-          links: [...boardData.links, newLink],
+        saveBoard({
+          links: [...currentBoard.links, newLink],
         });
       }
       setConnectingFromId(null);
@@ -391,17 +563,18 @@ export const StoryboardView: React.FC<StoryboardViewProps> = ({
       ];
     }
 
-    onUpdateBoard({
-      cards: [...boardData.cards, ...templateCards],
-      links: [...boardData.links, ...templateLinks],
+    saveBoard({
+      cards: [...currentBoard.cards, ...templateCards],
+      links: [...currentBoard.links, ...templateLinks],
     });
   };
 
   // Export board to Google Drive
   const handleExport = async () => {
+    if (!onExportToDrive) return;
     setIsExporting(true);
     try {
-      await onExportToDrive('Main Storyboard', boardData);
+      await onExportToDrive(currentBoard.title || 'Main Storyboard', currentBoard);
       alert(`Storyboard outline exported to Google Drive folder: ${driveFolderName}`);
     } catch (err) {
       console.error(err);
@@ -492,7 +665,7 @@ export const StoryboardView: React.FC<StoryboardViewProps> = ({
 
   return (
     <div className="page-content" onMouseUp={handleMouseUp} style={{ paddingBottom: '60px' }}>
-      {/* Top Header & Chip Buttons */}
+      {/* Top Header & Multi-Storyboard Switcher */}
       <div
         style={{
           display: 'flex',
@@ -503,13 +676,307 @@ export const StoryboardView: React.FC<StoryboardViewProps> = ({
           gap: '12px',
         }}
       >
-        <div>
-          <h1 style={{ fontFamily: 'var(--serif)', fontSize: '1.9rem', fontWeight: 600, color: 'var(--ink)' }}>
-            Storyboard & Corkboard
-          </h1>
-          <p style={{ color: 'var(--muted)', fontSize: '0.88rem' }}>
-            Plot chapters, link pictures, embed YouTube soundtracks, and weave narrative threads.
-          </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+            {/* Storyboard Selector Dropdown */}
+            <div style={{ position: 'relative' }}>
+              <button
+                className="action-btn-secondary"
+                onClick={() => setIsBoardSelectorOpen(!isBoardSelectorOpen)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  fontSize: '1.05rem',
+                  fontWeight: 700,
+                  fontFamily: 'var(--serif)',
+                  padding: '6px 14px',
+                  background: 'var(--panel)',
+                  borderColor: 'var(--line)',
+                  color: 'var(--ink)',
+                  boxShadow: 'var(--shadow-sm)',
+                }}
+              >
+                <Layers size={17} style={{ color: 'var(--accent)' }} />
+                <span>{currentBoard.title}</span>
+                <span
+                  style={{
+                    fontSize: '0.72rem',
+                    background: 'var(--accent-soft)',
+                    color: 'var(--accent)',
+                    padding: '1px 6px',
+                    borderRadius: '10px',
+                    fontWeight: 600,
+                  }}
+                >
+                  {currentBoard.cards.length} cards
+                </span>
+                <ChevronDown size={14} style={{ opacity: 0.6 }} />
+              </button>
+
+              {/* Storyboard Switcher Popover */}
+              {isBoardSelectorOpen && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: 'calc(100% + 6px)',
+                    left: 0,
+                    width: '320px',
+                    maxHeight: '440px',
+                    background: 'var(--panel)',
+                    border: '1px solid var(--line)',
+                    borderRadius: '10px',
+                    boxShadow: 'var(--shadow-lg)',
+                    zIndex: 100,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    overflow: 'hidden',
+                  }}
+                >
+                  <div style={{ padding: '10px', borderBottom: '1px solid var(--line)' }}>
+                    <div style={{ position: 'relative', marginBottom: '8px' }}>
+                      <Search
+                        size={13}
+                        style={{ position: 'absolute', left: '8px', top: '8px', color: 'var(--muted)' }}
+                      />
+                      <input
+                        type="text"
+                        placeholder="Search storyboards..."
+                        value={boardSearch}
+                        onChange={(e) => setBoardSearch(e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '5px 8px 5px 26px',
+                          fontSize: '0.8rem',
+                          background: 'var(--bg)',
+                          border: '1px solid var(--line)',
+                          borderRadius: '6px',
+                          color: 'var(--ink)',
+                        }}
+                      />
+                    </div>
+                    <div style={{ display: 'flex', gap: '4px' }}>
+                      {(['all', 'books', 'maps', 'standalone'] as const).map((filter) => (
+                        <button
+                          key={filter}
+                          className={`chip ${boardFilter === filter ? 'active' : ''}`}
+                          onClick={() => setBoardFilter(filter)}
+                          style={{
+                            fontSize: '0.72rem',
+                            padding: '2px 8px',
+                            textTransform: 'capitalize',
+                          }}
+                        >
+                          {filter}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div style={{ flex: 1, overflowY: 'auto', padding: '6px' }}>
+                    {boardsList
+                      .filter((b) => {
+                        if (boardFilter === 'books' && !b.storyId) return false;
+                        if (boardFilter === 'maps' && !b.mapId) return false;
+                        if (boardFilter === 'standalone' && (b.storyId || b.mapId)) return false;
+                        if (boardSearch.trim()) {
+                          const q = boardSearch.toLowerCase();
+                          const matchTitle = b.title.toLowerCase().includes(q);
+                          const matchDesc = b.description?.toLowerCase().includes(q);
+                          const bStory = stories.find((s) => s.id === b.storyId)?.title.toLowerCase();
+                          const bMap = maps.find((m) => m.id === b.mapId)?.name.toLowerCase();
+                          return matchTitle || matchDesc || (bStory && bStory.includes(q)) || (bMap && bMap.includes(q));
+                        }
+                        return true;
+                      })
+                      .map((b) => {
+                        const bStory = stories.find((s) => s.id === b.storyId);
+                        const bChap = bStory?.chapters?.find((c) => c.id === b.chapterId);
+                        const bMap = maps.find((m) => m.id === b.mapId);
+                        const bStamp = bMap?.stamps?.find((st) => st.id === b.locationId);
+                        const isCurrent = b.id === currentBoard.id;
+
+                        return (
+                          <div
+                            key={b.id}
+                            onClick={() => {
+                              if (onSelectStoryboard) onSelectStoryboard(b.id);
+                              setIsBoardSelectorOpen(false);
+                            }}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              padding: '8px 10px',
+                              borderRadius: '6px',
+                              cursor: 'pointer',
+                              background: isCurrent ? 'var(--accent-soft)' : 'transparent',
+                              marginBottom: '2px',
+                            }}
+                          >
+                            <div style={{ minWidth: 0, flex: 1 }}>
+                              <div
+                                style={{
+                                  fontSize: '0.85rem',
+                                  fontWeight: isCurrent ? 700 : 500,
+                                  color: isCurrent ? 'var(--accent)' : 'var(--ink)',
+                                  whiteSpace: 'nowrap',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                }}
+                              >
+                                {b.title}
+                              </div>
+                              <div
+                                style={{
+                                  fontSize: '0.72rem',
+                                  color: 'var(--muted)',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  marginTop: '2px',
+                                }}
+                              >
+                                {bStory ? (
+                                  <>
+                                    <BookOpen size={10} />
+                                    <span>{bStory.title}{bChap ? ` · ${bChap.title}` : ''}</span>
+                                  </>
+                                ) : bMap ? (
+                                  <>
+                                    <Compass size={10} />
+                                    <span>{bMap.name}{bStamp ? ` · ${bStamp.label || 'Marker'}` : ''}</span>
+                                  </>
+                                ) : (
+                                  <span>Standalone</span>
+                                )}
+                                <span>· {b.cards.length} cards</span>
+                              </div>
+                            </div>
+                            {isCurrent && <Check size={14} style={{ color: 'var(--accent)', marginLeft: '6px' }} />}
+                          </div>
+                        );
+                      })}
+                  </div>
+
+                  <div
+                    style={{
+                      padding: '8px 10px',
+                      borderTop: '1px solid var(--line)',
+                      background: 'var(--bg)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '8px',
+                    }}
+                  >
+                    <button
+                      className="action-btn-primary"
+                      onClick={() => {
+                        setIsBoardSelectorOpen(false);
+                        setIsNewBoardModalOpen(true);
+                      }}
+                      style={{ fontSize: '0.78rem', padding: '4px 10px', flex: 1, justifyContent: 'center' }}
+                    >
+                      <Plus size={13} />
+                      <span>New Storyboard</span>
+                    </button>
+                    <button
+                      className="icon-btn"
+                      onClick={handleDuplicateBoard}
+                      title="Duplicate current Storyboard"
+                      style={{ padding: '6px' }}
+                    >
+                      <Copy size={14} />
+                    </button>
+                    {boardsList.length > 1 && (
+                      <button
+                        className="icon-btn"
+                        onClick={handleDeleteCurrentBoard}
+                        title="Delete current Storyboard"
+                        style={{ padding: '6px', color: '#c53030' }}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Attachment Badge */}
+            <button
+              className="chip"
+              onClick={() => setIsAttachModalOpen(true)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                fontSize: '0.78rem',
+                background: currentBoard.storyId || currentBoard.mapId ? 'var(--panel)' : 'var(--bg)',
+                borderColor: currentBoard.storyId || currentBoard.mapId ? 'var(--accent)' : 'var(--line)',
+                color: currentBoard.storyId || currentBoard.mapId ? 'var(--ink)' : 'var(--muted)',
+                cursor: 'pointer',
+              }}
+              title="Click to attach this Storyboard to a Book, Chapter, Map, or Location"
+            >
+              {attachedStory ? (
+                <>
+                  <BookOpen size={13} style={{ color: 'var(--accent)' }} />
+                  <span>
+                    Book: <b>{attachedStory.title}</b>
+                    {attachedChapter ? ` › ${attachedChapter.title}` : ''}
+                  </span>
+                </>
+              ) : attachedMap ? (
+                <>
+                  <Compass size={13} style={{ color: '#3E7A8C' }} />
+                  <span>
+                    Map: <b>{attachedMap.name}</b>
+                    {attachedStamp ? ` › 📍 ${attachedStamp.label || 'Marker'}` : ''}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <Link2 size={13} />
+                  <span>Attach to Book or Map</span>
+                </>
+              )}
+              <Sliders size={11} style={{ opacity: 0.5, marginLeft: '2px' }} />
+            </button>
+
+            {/* Quick jump link if attached to Story */}
+            {attachedStory && onNavigateToStory && (
+              <button
+                className="icon-btn"
+                onClick={() => onNavigateToStory(attachedStory.id, attachedChapter?.id)}
+                title={attachedChapter ? `Open ${attachedChapter.title} in Editor` : `Open ${attachedStory.title} in Editor`}
+                style={{ fontSize: '0.74rem', gap: '4px', padding: '4px 8px', color: 'var(--accent)' }}
+              >
+                <span>Edit Manuscript</span>
+                <ArrowRight size={12} />
+              </button>
+            )}
+
+            {/* Quick jump link if attached to Map */}
+            {attachedMap && onNavigateToMap && (
+              <button
+                className="icon-btn"
+                onClick={() => onNavigateToMap(attachedMap.id, attachedStamp?.id)}
+                title={`Open ${attachedMap.name} in Map Maker`}
+                style={{ fontSize: '0.74rem', gap: '4px', padding: '4px 8px', color: '#3E7A8C' }}
+              >
+                <span>View Map</span>
+                <ArrowRight size={12} />
+              </button>
+            )}
+          </div>
+
+          {currentBoard.description && (
+            <p style={{ color: 'var(--muted)', fontSize: '0.82rem', margin: '0 0 0 2px' }}>
+              {currentBoard.description}
+            </p>
+          )}
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
@@ -676,9 +1143,9 @@ export const StoryboardView: React.FC<StoryboardViewProps> = ({
               </marker>
             </defs>
 
-            {boardData.links.map((link) => {
-              const fromCard = boardData.cards.find((c) => c.id === link.fromId);
-              const toCard = boardData.cards.find((c) => c.id === link.toId);
+            {currentBoard.links.map((link) => {
+              const fromCard = currentBoard.cards.find((c) => c.id === link.fromId);
+              const toCard = currentBoard.cards.find((c) => c.id === link.toId);
               if (!fromCard || !toCard) return null;
 
               const { pathData, midX, midY } = calculateConnectionCurve(fromCard, toCard);
@@ -731,7 +1198,7 @@ export const StoryboardView: React.FC<StoryboardViewProps> = ({
           </svg>
 
           {/* Cards */}
-          {boardData.cards.map((card) => {
+          {currentBoard.cards.map((card) => {
             const cfg = CARD_COLORS[card.kind] || CARD_COLORS.note;
             const isConnecting = connectingFromId === card.id;
             const cardBg = card.color || cfg.color;
@@ -1154,6 +1621,373 @@ export const StoryboardView: React.FC<StoryboardViewProps> = ({
             >
               <X size={24} />
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* New Storyboard Modal */}
+      {isNewBoardModalOpen && (
+        <div className="modal-overlay" onClick={() => setIsNewBoardModalOpen(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '480px' }}>
+            <div className="modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Layers size={18} style={{ color: 'var(--accent)' }} />
+                <h3 style={{ fontSize: '1.15rem' }}>Create New Storyboard</h3>
+              </div>
+              <button className="icon-btn" onClick={() => setIsNewBoardModalOpen(false)}>
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <label style={{ fontSize: '0.78rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--muted)', display: 'block', marginBottom: '4px' }}>
+                  Storyboard Title *
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Chapter 4 - The Citadel Infiltration"
+                  value={newTitle}
+                  onChange={(e) => setNewTitle(e.target.value)}
+                  autoFocus
+                  style={{
+                    width: '100%',
+                    background: 'var(--bg)',
+                    border: '1px solid var(--line)',
+                    borderRadius: '6px',
+                    padding: '8px 12px',
+                    fontSize: '0.9rem',
+                    color: 'var(--ink)',
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.78rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--muted)', display: 'block', marginBottom: '4px' }}>
+                  Description (Optional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="Short note or purpose for this board"
+                  value={newDesc}
+                  onChange={(e) => setNewDesc(e.target.value)}
+                  style={{
+                    width: '100%',
+                    background: 'var(--bg)',
+                    border: '1px solid var(--line)',
+                    borderRadius: '6px',
+                    padding: '8px 12px',
+                    fontSize: '0.85rem',
+                    color: 'var(--ink)',
+                  }}
+                />
+              </div>
+
+              {/* Book & Chapter Attachment */}
+              <div style={{ padding: '10px', background: 'var(--panel)', borderRadius: '8px', border: '1px solid var(--line)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+                  <BookOpen size={14} style={{ color: 'var(--accent)' }} />
+                  <span style={{ fontSize: '0.82rem', fontWeight: 600 }}>Attach to Book & Chapter</span>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <select
+                    value={newStoryId}
+                    onChange={(e) => {
+                      setNewStoryId(e.target.value);
+                      setNewChapterId('');
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '6px 10px',
+                      background: 'var(--bg)',
+                      border: '1px solid var(--line)',
+                      borderRadius: '6px',
+                      fontSize: '0.84rem',
+                      color: 'var(--ink)',
+                    }}
+                  >
+                    <option value="">-- No Book (Standalone) --</option>
+                    {stories.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.title}
+                      </option>
+                    ))}
+                  </select>
+
+                  {newStoryId && (
+                    <select
+                      value={newChapterId}
+                      onChange={(e) => setNewChapterId(e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '6px 10px',
+                        background: 'var(--bg)',
+                        border: '1px solid var(--line)',
+                        borderRadius: '6px',
+                        fontSize: '0.84rem',
+                        color: 'var(--ink)',
+                      }}
+                    >
+                      <option value="">Whole Book (All Chapters)</option>
+                      {(stories.find((s) => s.id === newStoryId)?.chapters || []).map((c) => (
+                        <option key={c.id} value={c.id}>
+                          Chapter: {c.title}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              </div>
+
+              {/* Map & Location Attachment */}
+              <div style={{ padding: '10px', background: 'var(--panel)', borderRadius: '8px', border: '1px solid var(--line)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+                  <Compass size={14} style={{ color: '#3E7A8C' }} />
+                  <span style={{ fontSize: '0.82rem', fontWeight: 600 }}>Attach to World Map & Location</span>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <select
+                    value={newMapId}
+                    onChange={(e) => {
+                      setNewMapId(e.target.value);
+                      setNewLocationId('');
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '6px 10px',
+                      background: 'var(--bg)',
+                      border: '1px solid var(--line)',
+                      borderRadius: '6px',
+                      fontSize: '0.84rem',
+                      color: 'var(--ink)',
+                    }}
+                  >
+                    <option value="">-- No Map (Standalone) --</option>
+                    {maps.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.name}
+                      </option>
+                    ))}
+                  </select>
+
+                  {newMapId && (
+                    <select
+                      value={newLocationId}
+                      onChange={(e) => setNewLocationId(e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '6px 10px',
+                        background: 'var(--bg)',
+                        border: '1px solid var(--line)',
+                        borderRadius: '6px',
+                        fontSize: '0.84rem',
+                        color: 'var(--ink)',
+                      }}
+                    >
+                      <option value="">Entire Map (General Realm)</option>
+                      {(maps.find((m) => m.id === newMapId)?.stamps || []).map((st) => (
+                        <option key={st.id} value={st.id}>
+                          📍 {st.label || st.type} ({Math.round(st.x)}, {Math.round(st.y)})
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="modal-footer">
+              <button className="action-btn-secondary" onClick={() => setIsNewBoardModalOpen(false)}>
+                Cancel
+              </button>
+              <button
+                className="action-btn-primary"
+                onClick={handleCreateBoard}
+                disabled={!newTitle.trim()}
+              >
+                Create Storyboard
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Storyboard Attachment & Settings Modal */}
+      {isAttachModalOpen && (
+        <div className="modal-overlay" onClick={() => setIsAttachModalOpen(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px' }}>
+            <div className="modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Sliders size={18} style={{ color: 'var(--accent)' }} />
+                <h3 style={{ fontSize: '1.15rem' }}>Storyboard Settings & Attachments</h3>
+              </div>
+              <button className="icon-btn" onClick={() => setIsAttachModalOpen(false)}>
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <label style={{ fontSize: '0.78rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--muted)', display: 'block', marginBottom: '4px' }}>
+                  Storyboard Title
+                </label>
+                <input
+                  type="text"
+                  value={attachTitle}
+                  onChange={(e) => setAttachTitle(e.target.value)}
+                  style={{
+                    width: '100%',
+                    background: 'var(--bg)',
+                    border: '1px solid var(--line)',
+                    borderRadius: '6px',
+                    padding: '8px 12px',
+                    fontSize: '0.9rem',
+                    color: 'var(--ink)',
+                  }}
+                />
+              </div>
+
+              {/* Book & Chapter Attachment */}
+              <div style={{ padding: '12px', background: 'var(--panel)', borderRadius: '8px', border: '1px solid var(--line)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+                  <BookOpen size={15} style={{ color: 'var(--accent)' }} />
+                  <span style={{ fontSize: '0.84rem', fontWeight: 600 }}>Attached Book & Chapter</span>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <select
+                    value={attachStoryId}
+                    onChange={(e) => {
+                      setAttachStoryId(e.target.value);
+                      setAttachChapterId('');
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '7px 10px',
+                      background: 'var(--bg)',
+                      border: '1px solid var(--line)',
+                      borderRadius: '6px',
+                      fontSize: '0.84rem',
+                      color: 'var(--ink)',
+                    }}
+                  >
+                    <option value="">-- No Book (Standalone) --</option>
+                    {stories.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        📖 {s.title}
+                      </option>
+                    ))}
+                  </select>
+
+                  {attachStoryId && (
+                    <select
+                      value={attachChapterId}
+                      onChange={(e) => setAttachChapterId(e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '7px 10px',
+                        background: 'var(--bg)',
+                        border: '1px solid var(--line)',
+                        borderRadius: '6px',
+                        fontSize: '0.84rem',
+                        color: 'var(--ink)',
+                      }}
+                    >
+                      <option value="">Whole Book (All Chapters)</option>
+                      {(stories.find((s) => s.id === attachStoryId)?.chapters || []).map((c) => (
+                        <option key={c.id} value={c.id}>
+                          📑 Chapter: {c.title}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              </div>
+
+              {/* Map & Location Attachment */}
+              <div style={{ padding: '12px', background: 'var(--panel)', borderRadius: '8px', border: '1px solid var(--line)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+                  <Compass size={15} style={{ color: '#3E7A8C' }} />
+                  <span style={{ fontSize: '0.84rem', fontWeight: 600 }}>Attached World Map & Location</span>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <select
+                    value={attachMapId}
+                    onChange={(e) => {
+                      setAttachMapId(e.target.value);
+                      setAttachLocationId('');
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '7px 10px',
+                      background: 'var(--bg)',
+                      border: '1px solid var(--line)',
+                      borderRadius: '6px',
+                      fontSize: '0.84rem',
+                      color: 'var(--ink)',
+                    }}
+                  >
+                    <option value="">-- No Map (Standalone) --</option>
+                    {maps.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        🗺️ {m.name}
+                      </option>
+                    ))}
+                  </select>
+
+                  {attachMapId && (
+                    <select
+                      value={attachLocationId}
+                      onChange={(e) => setAttachLocationId(e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '7px 10px',
+                        background: 'var(--bg)',
+                        border: '1px solid var(--line)',
+                        borderRadius: '6px',
+                        fontSize: '0.84rem',
+                        color: 'var(--ink)',
+                      }}
+                    >
+                      <option value="">Entire Map (General Realm)</option>
+                      {(maps.find((m) => m.id === attachMapId)?.stamps || []).map((st) => (
+                        <option key={st.id} value={st.id}>
+                          📍 {st.label || st.type} ({Math.round(st.x)}, {Math.round(st.y)})
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="modal-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <button
+                type="button"
+                className="action-btn-secondary"
+                onClick={() => {
+                  setAttachStoryId('');
+                  setAttachChapterId('');
+                  setAttachMapId('');
+                  setAttachLocationId('');
+                }}
+                style={{ fontSize: '0.78rem', color: 'var(--muted)' }}
+              >
+                Unlink (Make Standalone)
+              </button>
+
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button className="action-btn-secondary" onClick={() => setIsAttachModalOpen(false)}>
+                  Cancel
+                </button>
+                <button className="action-btn-primary" onClick={handleSaveAttachments}>
+                  Save Changes
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

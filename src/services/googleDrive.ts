@@ -360,7 +360,7 @@ export async function syncAllToGoogleDrive(
   data: {
     stories: Story[];
     characters: Character[];
-    storyboards: Record<string, StoryboardData>;
+    storyboards: Record<string, StoryboardData> | StoryboardData[];
     maps: WorldMap[];
   }
 ): Promise<{ folderId: string; syncedStories: number; syncedAt: number }> {
@@ -545,7 +545,7 @@ export async function syncBiDirectionalWithGoogleDrive(
   data: {
     stories: Story[];
     characters: Character[];
-    storyboards: Record<string, StoryboardData>;
+    storyboards: Record<string, StoryboardData> | StoryboardData[];
     maps: WorldMap[];
   },
   lastModifiedState: {
@@ -775,7 +775,7 @@ export async function syncIncrementalToGoogleDrive(
   data: {
     stories: Story[];
     characters: Character[];
-    storyboards: Record<string, StoryboardData>;
+    storyboards: Record<string, StoryboardData> | StoryboardData[];
     maps: WorldMap[];
   },
   lastModifiedState: {

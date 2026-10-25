@@ -4,10 +4,18 @@ export const DEFAULT_STORIES: Story[] = [];
 
 export const DEFAULT_CHARACTERS: Character[] = [];
 
-export const DEFAULT_STORYBOARD: StoryboardData = {
-  cards: [],
-  links: [],
-};
+export const DEFAULT_STORYBOARDS: StoryboardData[] = [
+  {
+    id: 'sb-default',
+    title: 'Main Storyboard',
+    description: 'Master plot threads, beats, and scene cards',
+    cards: [],
+    links: [],
+    updatedAt: Date.now(),
+  },
+];
+
+export const DEFAULT_STORYBOARD: StoryboardData = DEFAULT_STORYBOARDS[0];
 
 export const DEFAULT_MAP: WorldMap = {
   id: 'map-1',
@@ -33,6 +41,7 @@ const STORAGE_KEYS = {
   STORIES: 'ink_stories',
   CHARACTERS: 'ink_characters',
   STORYBOARD: 'ink_storyboard',
+  STORYBOARDS: 'ink_storyboards',
   MAPS: 'ink_maps',
   STATS: 'ink_stats',
   CONFIG: 'ink_config',
@@ -68,18 +77,60 @@ export function saveStoredCharacters(characters: Character[]) {
   localStorage.setItem(STORAGE_KEYS.CHARACTERS, JSON.stringify(characters));
 }
 
-export function loadStoredStoryboard(): StoryboardData {
+export function loadStoredStoryboards(): StoryboardData[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEYS.STORYBOARD);
-    if (raw) return JSON.parse(raw);
+    const rawMulti = localStorage.getItem(STORAGE_KEYS.STORYBOARDS);
+    if (rawMulti) {
+      const parsed = JSON.parse(rawMulti);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+    // Migration: check old single storyboard
+    const rawSingle = localStorage.getItem(STORAGE_KEYS.STORYBOARD);
+    if (rawSingle) {
+      const parsedSingle = JSON.parse(rawSingle);
+      if (parsedSingle && (parsedSingle.cards || parsedSingle.links)) {
+        const migrated: StoryboardData[] = [
+          {
+            id: 'sb-default',
+            title: 'Main Storyboard',
+            description: 'Master plot threads, beats, and scene cards',
+            cards: parsedSingle.cards || [],
+            links: parsedSingle.links || [],
+            updatedAt: Date.now(),
+          },
+        ];
+        saveStoredStoryboards(migrated);
+        return migrated;
+      }
+    }
   } catch (e) {
     console.error(e);
   }
-  return DEFAULT_STORYBOARD;
+  return DEFAULT_STORYBOARDS;
+}
+
+export function saveStoredStoryboards(boards: StoryboardData[]) {
+  localStorage.setItem(STORAGE_KEYS.STORYBOARDS, JSON.stringify(boards));
+  // Keep legacy single board updated with first board for backward safety
+  if (boards.length > 0) {
+    localStorage.setItem(STORAGE_KEYS.STORYBOARD, JSON.stringify(boards[0]));
+  }
+}
+
+export function loadStoredStoryboard(): StoryboardData {
+  const boards = loadStoredStoryboards();
+  return boards[0] || DEFAULT_STORYBOARD;
 }
 
 export function saveStoredStoryboard(board: StoryboardData) {
-  localStorage.setItem(STORAGE_KEYS.STORYBOARD, JSON.stringify(board));
+  const boards = loadStoredStoryboards();
+  const index = boards.findIndex((b) => b.id === board.id);
+  if (index >= 0) {
+    boards[index] = board;
+  } else {
+    boards.push(board);
+  }
+  saveStoredStoryboards(boards);
 }
 
 export function loadStoredMaps(): WorldMap[] {

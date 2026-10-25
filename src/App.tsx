@@ -20,14 +20,16 @@ import {
   saveStoredStories,
   loadStoredCharacters,
   saveStoredCharacters,
-  loadStoredStoryboard,
-  saveStoredStoryboard,
+  loadStoredStoryboards,
+  saveStoredStoryboards,
   loadStoredMaps,
   saveStoredMaps,
   loadStoredConfig,
   saveStoredConfig,
   calculateWritingStats,
   clearAllStoredData,
+  DEFAULT_STORYBOARDS,
+  DEFAULT_MAP,
 } from './services/storage';
 import {
   saveStoryToDrive,
@@ -52,8 +54,14 @@ export const App: React.FC = () => {
   // App Core State
   const [stories, setStories] = useState<Story[]>(loadStoredStories);
   const [characters, setCharacters] = useState<Character[]>(loadStoredCharacters);
-  const [storyboard, setStoryboard] = useState<StoryboardData>(loadStoredStoryboard);
+  const [storyboards, setStoryboards] = useState<StoryboardData[]>(loadStoredStoryboards);
+  const [activeStoryboardId, setActiveStoryboardId] = useState<string>(
+    () => loadStoredStoryboards()[0]?.id || 'sb-default'
+  );
   const [maps, setMaps] = useState<WorldMap[]>(loadStoredMaps);
+  const [activeMapId, setActiveMapId] = useState<string>(
+    () => loadStoredMaps()[0]?.id || 'map-1'
+  );
   const [config, setConfig] = useState<UserConfig>(loadStoredConfig);
 
   // Modification tracking for incremental sync
@@ -115,8 +123,8 @@ export const App: React.FC = () => {
   }, [characters]);
 
   useEffect(() => {
-    saveStoredStoryboard(storyboard);
-  }, [storyboard]);
+    saveStoredStoryboards(storyboards);
+  }, [storyboards]);
 
   useEffect(() => {
     saveStoredMaps(maps);
@@ -160,7 +168,7 @@ export const App: React.FC = () => {
             {
               stories,
               characters,
-              storyboards: { default: storyboard },
+              storyboards,
               maps,
             },
             {
@@ -195,7 +203,7 @@ export const App: React.FC = () => {
     config.googleDriveFolderName,
     stories,
     characters,
-    storyboard,
+    storyboards,
     maps,
     charactersLastModified,
     charactersLastSynced,
@@ -266,7 +274,7 @@ export const App: React.FC = () => {
           {
             stories,
             characters,
-            storyboards: { default: storyboard },
+            storyboards,
             maps,
           },
           {
@@ -392,10 +400,12 @@ export const App: React.FC = () => {
       y: 150 + Math.random() * 150,
       width: 240,
     };
-    setStoryboard((prev) => ({
-      ...prev,
-      cards: [...prev.cards, newCard],
-    }));
+    setStoryboards((prev) => {
+      const targetId = activeStoryboardId || prev[0]?.id;
+      return prev.map((b) =>
+        b.id === targetId ? { ...b, cards: [...b.cards, newCard], updatedAt: Date.now() } : b
+      );
+    });
     setStoryboardLastModified(Date.now());
     alert(`Added "${title}" to your Storyboard!`);
     setCurrentView('storyboard');
@@ -406,7 +416,7 @@ export const App: React.FC = () => {
     const data = {
       stories,
       characters,
-      storyboard,
+      storyboards,
       maps,
       config,
       exportedAt: new Date().toISOString(),
@@ -415,7 +425,7 @@ export const App: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `Inkling_Studio_Backup_${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `Storyboard_Studio_Backup_${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -427,7 +437,19 @@ export const App: React.FC = () => {
         const json = JSON.parse(e.target?.result as string);
         if (json.stories) setStories(json.stories);
         if (json.characters) setCharacters(json.characters);
-        if (json.storyboard) setStoryboard(json.storyboard);
+        if (json.storyboards && Array.isArray(json.storyboards)) {
+          setStoryboards(json.storyboards);
+        } else if (json.storyboard) {
+          setStoryboards([
+            {
+              id: 'sb-default',
+              title: 'Main Storyboard',
+              cards: json.storyboard.cards || [],
+              links: json.storyboard.links || [],
+              updatedAt: Date.now(),
+            },
+          ]);
+        }
         if (json.maps) setMaps(json.maps);
         alert('Workspace backup successfully imported!');
       } catch (err) {
@@ -453,8 +475,8 @@ export const App: React.FC = () => {
       clearAllStoredData();
       setStories([]);
       setCharacters([]);
-      setStoryboard({ cards: [], links: [] });
-      setMaps([]);
+      setStoryboards(DEFAULT_STORYBOARDS);
+      setMaps([DEFAULT_MAP]);
       setActiveStory(null);
       setLastDriveSync(undefined);
 
@@ -547,7 +569,8 @@ export const App: React.FC = () => {
           <EditorView
             story={activeStory}
             characters={characters}
-            storyboard={storyboard}
+            storyboard={storyboards.find((sb) => sb.id === activeStoryboardId) || storyboards[0]}
+            storyboards={storyboards}
             maps={maps}
             onBack={() => setActiveStory(null)}
             onUpdateStory={handleUpdateStory}
@@ -556,6 +579,56 @@ export const App: React.FC = () => {
             driveFolderName={config.googleDriveFolderName}
             googleAccessToken={config.googleAccessToken}
             driveFolderId={config.googleDriveFolderId}
+            onNavigateToStoryboard={(sbId) => {
+              setActiveStoryboardId(sbId);
+              setActiveStory(null);
+              setCurrentView('storyboard');
+            }}
+            onCreateStoryboardForContext={(initial) => {
+              const newId = `sb-${Date.now()}`;
+              const newBoard: StoryboardData = {
+                id: newId,
+                title: initial.title || 'New Storyboard',
+                cards: [],
+                links: [],
+                updatedAt: Date.now(),
+                storyId: initial.storyId,
+                chapterId: initial.chapterId,
+                mapId: initial.mapId,
+                locationId: initial.locationId,
+              };
+              setStoryboards((prev) => [...prev, newBoard]);
+              setActiveStoryboardId(newId);
+              setStoryboardLastModified(Date.now());
+              setActiveStory(null);
+              setCurrentView('storyboard');
+            }}
+            onNavigateToMap={(mapId) => {
+              setActiveMapId(mapId);
+              setActiveStory(null);
+              setCurrentView('maps');
+            }}
+            onCreateMapForContext={(initial) => {
+              const newId = `map-${Date.now()}`;
+              const newMap: WorldMap = {
+                id: newId,
+                name: initial.name || `${activeStory.title} Realm Map`,
+                kind: 'realm',
+                style: 'wash',
+                aspect: 'screen',
+                storyId: initial.storyId || activeStory.id,
+                chapterId: initial.chapterId,
+                stamps: [],
+                paths: [],
+                realms: [],
+                updatedAt: Date.now(),
+              };
+              setMaps((prev) => [...prev, newMap]);
+              setActiveMapId(newId);
+              setMapsLastModified(Date.now());
+              setActiveStory(null);
+              setCurrentView('maps');
+            }}
           />
         ) : currentView === 'dashboard' ? (
           <DashboardView
@@ -583,10 +656,41 @@ export const App: React.FC = () => {
           />
         ) : currentView === 'storyboard' ? (
           <StoryboardView
-            boardData={storyboard}
-            onUpdateBoard={(newBoard) => {
-              setStoryboard(newBoard);
+            storyboards={storyboards}
+            activeStoryboardId={activeStoryboardId}
+            onSelectStoryboard={setActiveStoryboardId}
+            onCreateStoryboard={(newBoard) => {
+              if (newBoard && newBoard.id) {
+                setStoryboards((prev) => [...prev, newBoard as StoryboardData]);
+                setActiveStoryboardId(newBoard.id);
+                setStoryboardLastModified(Date.now());
+              }
+            }}
+            onUpdateStoryboard={(updatedBoard) => {
+              setStoryboards((prev) =>
+                prev.map((b) => (b.id === updatedBoard.id ? updatedBoard : b))
+              );
               setStoryboardLastModified(Date.now());
+            }}
+            onDeleteStoryboard={(id) => {
+              const remaining = storyboards.filter((b) => b.id !== id);
+              const nextBoards = remaining.length > 0 ? remaining : DEFAULT_STORYBOARDS;
+              setStoryboards(nextBoards);
+              setActiveStoryboardId(nextBoards[0]?.id || 'sb-default');
+              setStoryboardLastModified(Date.now());
+            }}
+            stories={stories}
+            maps={maps}
+            onNavigateToStory={(storyId, chapterId) => {
+              const target = stories.find((s) => s.id === storyId);
+              if (target) {
+                setActiveStory(chapterId ? { ...target, activeChapterId: chapterId } : target);
+                setCurrentView('editor');
+              }
+            }}
+            onNavigateToMap={(mapId) => {
+              setActiveMapId(mapId);
+              setCurrentView('maps');
             }}
             onExportToDrive={async (title, data) => {
               if (config.googleAccessToken) {
@@ -623,11 +727,67 @@ export const App: React.FC = () => {
         ) : currentView === 'maps' ? (
           <MapMakerView
             maps={maps}
+            activeMapId={activeMapId}
+            onSelectMap={setActiveMapId}
             onUpdateMaps={(newMaps) => {
               setMaps(newMaps);
               setMapsLastModified(Date.now());
             }}
+            onCreateMap={(newMap) => {
+              if (newMap && newMap.id) {
+                setMaps((prev) => [...prev, newMap as WorldMap]);
+                setActiveMapId(newMap.id);
+                setMapsLastModified(Date.now());
+              }
+            }}
+            onDeleteMap={(id) => {
+              const remaining = maps.filter((m) => m.id !== id);
+              const nextMaps = remaining.length > 0 ? remaining : [DEFAULT_MAP];
+              setMaps(nextMaps);
+              setActiveMapId(nextMaps[0]?.id || 'map-1');
+              setMapsLastModified(Date.now());
+            }}
+            stories={stories}
+            storyboards={storyboards}
+            onOpenStoryboard={(storyboardId) => {
+              setActiveStoryboardId(storyboardId);
+              setCurrentView('storyboard');
+            }}
+            onCreateStoryboardForLocation={(mapId, stampId, stampName) => {
+              const newId = `sb-${Date.now()}`;
+              const newBoard: StoryboardData = {
+                id: newId,
+                title: `${stampName} - Story Beats`,
+                description: `Lore and scene beats for ${stampName}`,
+                cards: [
+                  {
+                    id: `card-${Date.now()}`,
+                    kind: 'place',
+                    title: stampName,
+                    body: `Atmosphere, local conflicts, and story events occurring at ${stampName}.`,
+                    x: 120,
+                    y: 120,
+                    width: 260,
+                  },
+                ],
+                links: [],
+                updatedAt: Date.now(),
+                mapId,
+                locationId: stampId,
+              };
+              setStoryboards((prev) => [...prev, newBoard]);
+              setActiveStoryboardId(newId);
+              setStoryboardLastModified(Date.now());
+              setCurrentView('storyboard');
+            }}
             onSyncDrive={handleTriggerDriveSync}
+            onNavigateToStory={(storyId, chapterId) => {
+              const target = stories.find((s) => s.id === storyId);
+              if (target) {
+                setActiveStory(chapterId ? { ...target, activeChapterId: chapterId } : target);
+                setCurrentView('editor');
+              }
+            }}
           />
         ) : currentView === 'setup' ? (
           <SetupView
