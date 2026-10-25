@@ -49,7 +49,7 @@ export interface Project {
   description?: string;
 }
 
-export type CardKind = 'note' | 'beat' | 'character' | 'place' | 'idea' | 'map';
+export type CardKind = 'note' | 'beat' | 'character' | 'place' | 'idea' | 'map' | 'media';
 
 export interface StoryboardCard {
   id: string;
@@ -61,6 +61,10 @@ export interface StoryboardCard {
   width?: number;
   storyId?: string; // specific story or 'all'
   color?: string;
+  imageUrl?: string;
+  youtubeUrl?: string;
+  tag?: string;
+  checklist?: { id: string; text: string; done: boolean }[];
 }
 
 export interface StoryboardLink {
@@ -68,6 +72,7 @@ export interface StoryboardLink {
   fromId: string;
   toId: string;
   label?: string;
+  color?: string;
 }
 
 export interface StoryboardData {
