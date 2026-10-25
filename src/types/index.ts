@@ -49,7 +49,7 @@ export interface Project {
   description?: string;
 }
 
-export type CardKind = 'note' | 'beat' | 'character' | 'place' | 'idea' | 'map' | 'media';
+export type CardKind = 'note' | 'beat' | 'character' | 'monster' | 'place' | 'idea' | 'map' | 'media';
 
 export interface StoryboardCard {
   id: string;
@@ -60,6 +60,7 @@ export interface StoryboardCard {
   y: number;
   width?: number;
   storyId?: string; // specific story or 'all'
+  characterId?: string; // Links to Character or Monster
   color?: string;
   imageUrl?: string;
   youtubeUrl?: string;
@@ -329,6 +330,9 @@ export interface MapStamp {
   label?: string;
   color?: string;
   storyboardId?: string; // Direct link to an attached storyboard
+  characterId?: string;  // Direct link to Character or Monster (e.g. for hero or monster tokens)
+  characterIds?: string[]; // Assigned characters / monsters inhabiting this location
+  encounterNotes?: string; // Encounter or inhabitant notes for this location
 }
 
 export interface MapPath {

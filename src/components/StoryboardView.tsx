@@ -33,8 +33,12 @@ import {
   Check,
   Search,
   Link2,
+  Users,
+  Skull,
+  Eye,
 } from 'lucide-react';
-import { StoryboardData, StoryboardCard, StoryboardLink, CardKind, Story, WorldMap } from '../types';
+import { StoryboardData, StoryboardCard, StoryboardLink, CardKind, Story, WorldMap, Character } from '../types';
+import { CharacterSheetModal } from './characterSheets/CharacterSheetModal';
 
 interface StoryboardViewProps {
   boardData?: StoryboardData;
@@ -47,8 +51,10 @@ interface StoryboardViewProps {
   onDeleteStoryboard?: (id: string) => void;
   stories?: Story[];
   maps?: WorldMap[];
+  characters?: Character[];
   onNavigateToStory?: (storyId: string, chapterId?: string) => void;
   onNavigateToMap?: (mapId: string, stampId?: string) => void;
+  onNavigateToCharacter?: (id: string) => void;
   onExportToDrive?: (title: string, data: StoryboardData) => Promise<void>;
   driveFolderName?: string;
 }
@@ -57,6 +63,7 @@ const CARD_COLORS: Record<CardKind, { label: string; color: string; tint: string
   note: { label: 'Note', color: '#ECE4D7', tint: '#8C7C69' },
   beat: { label: 'Scene', color: '#DCE9EE', tint: '#467B92' },
   character: { label: 'Character', color: '#F1E2E0', tint: '#B0567A' },
+  monster: { label: 'Monster / Foe', color: '#FCEBEA', tint: '#C53030' },
   place: { label: 'Place', color: '#DFEAE4', tint: '#3F7B5E' },
   idea: { label: 'Idea', color: '#E7E1F0', tint: '#735099' },
   map: { label: 'Map', color: '#F3ECDC', tint: '#8C7C69' },
@@ -110,8 +117,10 @@ export const StoryboardView: React.FC<StoryboardViewProps> = ({
   onDeleteStoryboard,
   stories = [],
   maps = [],
+  characters = [],
   onNavigateToStory,
   onNavigateToMap,
+  onNavigateToCharacter,
   onExportToDrive,
   driveFolderName,
 }) => {
@@ -200,6 +209,81 @@ export const StoryboardView: React.FC<StoryboardViewProps> = ({
   const attachedChapter = attachedStory?.chapters?.find((c) => c.id === currentBoard.chapterId);
   const attachedMap = maps.find((m) => m.id === currentBoard.mapId);
   const attachedStamp = attachedMap?.stamps?.find((st) => st.id === currentBoard.locationId);
+
+  // Character & Monster Roster integration state
+  const [activeSheetChar, setActiveSheetChar] = useState<Character | null>(null);
+  const [isRosterPickerOpen, setIsRosterPickerOpen] = useState(false);
+  const [linkingCardId, setLinkingCardId] = useState<string | null>(null);
+  const [pickerFilter, setPickerFilter] = useState<'all' | 'character' | 'monster'>('all');
+  const [pickerSearch, setPickerSearch] = useState('');
+
+  const getCharacterSummaryString = (char: Character): string => {
+    const isMonster = char.entityKind === 'monster';
+    const sys = char.sheetSystem || 'narrative';
+
+    if (sys === 'dnd5e') {
+      if (isMonster && char.dnd5eMonster) {
+        const m = char.dnd5eMonster;
+        return `5E · CR ${m.cr || '1'} · AC ${m.ac || '10'} · HP ${m.hp || '10'}`;
+      } else if (char.dnd5eSheet) {
+        const s = char.dnd5eSheet;
+        return `5E · ${s.classLevel || 'Hero'} · AC ${s.ac ?? 10} · HP ${s.hpCurrent ?? s.hpMax ?? 10}/${s.hpMax ?? 10}`;
+      }
+    } else if (sys === 'shadowdark') {
+      if (isMonster && char.shadowdarkMonster) {
+        const m = char.shadowdarkMonster;
+        return `ShadowDark · LV ${m.level || 1} · AC ${m.ac || 10} · HP ${m.hp || '10'}`;
+      } else if (char.shadowdarkSheet) {
+        const s = char.shadowdarkSheet;
+        return `ShadowDark · ${s.characterClass || 'Adventurer'} · AC ${s.ac || 10} · HP ${s.hpCurrent ?? s.hpMax ?? 10}`;
+      }
+    } else if (sys === 'valiant') {
+      if (isMonster && char.valiantMonster) {
+        const m = char.valiantMonster;
+        return `Valiant · CR ${m.cr || '1'} · AC ${m.ac || '10'} · HP ${m.hp || '10'}`;
+      } else if (char.valiantSheet) {
+        const s = char.valiantSheet;
+        return `Valiant · ${s.classLevel || 'Hero'} · AC ${s.ac || 10} · HP ${s.hpCurrent ?? s.hpMax ?? 10}`;
+      }
+    } else if (sys === 'custom' && char.customSheet) {
+      const s = char.customSheet;
+      const pool = (s.resourcePools || [])[0];
+      return `${s.systemName || 'Custom'}${pool ? ` · ${pool.name}: ${pool.current}/${pool.max}` : ''}`;
+    }
+
+    return char.role ? `${char.role}` : (isMonster ? 'Adversary' : 'Cast');
+  };
+
+  const handleSpawnFromCharacter = (char: Character) => {
+    const isMonster = char.entityKind === 'monster';
+    const newCard: StoryboardCard = {
+      id: `sb-${Date.now()}`,
+      kind: isMonster ? 'monster' : 'character',
+      title: char.name,
+      body: char.notes || char.tagline || (isMonster ? `Adversary (${char.sheetSystem?.toUpperCase() || 'BESTIARY'})` : char.role || 'Cast member'),
+      characterId: char.id,
+      x: 140 + Math.random() * 200,
+      y: 120 + Math.random() * 150,
+      width: 270,
+      color: isMonster ? '#FCEBEA' : '#F1E2E0',
+    };
+    saveBoard({
+      cards: [...currentBoard.cards, newCard],
+    });
+    setIsRosterPickerOpen(false);
+  };
+
+  const handleLinkCardToCharacter = (cardId: string, char: Character) => {
+    const isMonster = char.entityKind === 'monster';
+    handleCardChange(cardId, {
+      characterId: char.id,
+      kind: isMonster ? 'monster' : 'character',
+      title: char.name,
+      color: isMonster ? '#FCEBEA' : '#F1E2E0',
+    });
+    setLinkingCardId(null);
+    setIsRosterPickerOpen(false);
+  };
 
   // Create a new Storyboard
   const handleCreateBoard = () => {
@@ -1050,7 +1134,7 @@ export const StoryboardView: React.FC<StoryboardViewProps> = ({
         <span style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--muted)', whiteSpace: 'nowrap' }}>
           + Add Card:
         </span>
-        {(['note', 'beat', 'character', 'place', 'idea', 'media'] as CardKind[]).map((k) => (
+        {(['note', 'beat', 'character', 'monster', 'place', 'idea', 'media'] as CardKind[]).map((k) => (
           <button
             key={k}
             className="chip"
@@ -1068,6 +1152,32 @@ export const StoryboardView: React.FC<StoryboardViewProps> = ({
             + {CARD_COLORS[k]?.label}
           </button>
         ))}
+
+        {characters && characters.length > 0 && (
+          <button
+            className="chip"
+            onClick={() => {
+              setLinkingCardId(null);
+              setIsRosterPickerOpen(true);
+            }}
+            style={{
+              background: 'var(--panel)',
+              color: 'var(--accent)',
+              borderColor: 'var(--accent)',
+              fontWeight: 700,
+              fontSize: '0.8rem',
+              padding: '4px 11px',
+              whiteSpace: 'nowrap',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+            }}
+            title="Spawn a storyboard card directly linked to a character or monster"
+          >
+            <Sparkles size={12} />
+            <span>+ From Cast / Bestiary</span>
+          </button>
+        )}
 
         {connectingFromId && (
           <span
@@ -1320,98 +1430,207 @@ export const StoryboardView: React.FC<StoryboardViewProps> = ({
                 )}
 
                 {/* Card Header & Controls */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span
-                      style={{
-                        fontSize: '0.72rem',
-                        fontWeight: 700,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.04em',
-                        color: isDarkCard ? '#94a3b8' : cfg.tint,
-                      }}
-                    >
-                      {cfg.label}
-                    </span>
+                {(() => {
+                  const linkedChar = characters?.find((c) => c.id === card.characterId);
+                  const isCharOrMonster = card.kind === 'character' || card.kind === 'monster' || !!linkedChar;
+                  const isMonsterCard = card.kind === 'monster' || linkedChar?.entityKind === 'monster';
 
-                    {/* Act Tag Badge if present */}
-                    {card.tag && (
-                      <span
-                        style={{
-                          fontSize: '0.68rem',
-                          padding: '1px 6px',
-                          borderRadius: '10px',
-                          background: isDarkCard ? '#334155' : 'rgba(0,0,0,0.06)',
-                          color: isDarkCard ? '#cbd5e1' : '#475569',
-                          fontWeight: 600,
-                        }}
-                      >
-                        {card.tag}
-                      </span>
-                    )}
-                  </div>
+                  return (
+                    <>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span
+                            style={{
+                              fontSize: '0.72rem',
+                              fontWeight: 700,
+                              textTransform: 'uppercase',
+                              letterSpacing: '0.04em',
+                              color: isDarkCard ? '#94a3b8' : cfg.tint,
+                            }}
+                          >
+                            {cfg.label}
+                          </span>
 
-                  {/* Actions Row */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
-                    {/* Add Image File Button */}
-                    <label
-                      className="card-btn-action"
-                      title="Attach image from computer"
-                      style={{
-                        cursor: 'pointer',
-                        padding: '3px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        opacity: 0.7,
-                      }}
-                    >
-                      <ImageIcon size={13} />
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={(e) => handleImageUpload(card.id, e)}
-                        style={{ display: 'none' }}
-                      />
-                    </label>
+                          {/* Act Tag Badge if present */}
+                          {card.tag && (
+                            <span
+                              style={{
+                                fontSize: '0.68rem',
+                                padding: '1px 6px',
+                                borderRadius: '10px',
+                                background: isDarkCard ? '#334155' : 'rgba(0,0,0,0.06)',
+                                color: isDarkCard ? '#cbd5e1' : '#475569',
+                                fontWeight: 600,
+                              }}
+                            >
+                              {card.tag}
+                            </span>
+                          )}
+                        </div>
 
-                    {/* Add YouTube Video Link */}
-                    <button
-                      className="card-btn-action"
-                      onClick={() => {
-                        setActiveMediaInput({ cardId: card.id, type: 'youtube' });
-                        setMediaUrlInput(card.youtubeUrl || '');
-                      }}
-                      title="Attach YouTube music / video"
-                      style={{ opacity: 0.7, padding: '3px' }}
-                    >
-                      <YoutubeIcon size={13} style={{ color: '#dc2626' }} />
-                    </button>
+                        {/* Actions Row */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                          {/* Link / Change Character or Monster Button */}
+                          {characters && characters.length > 0 && (
+                            <button
+                              className="card-btn-action"
+                              onClick={() => {
+                                setLinkingCardId(card.id);
+                                setIsRosterPickerOpen(true);
+                              }}
+                              title={card.characterId ? 'Change linked Character / Monster' : 'Link to Character or Monster'}
+                              style={{
+                                padding: '3px',
+                                color: card.characterId ? 'var(--accent)' : 'inherit',
+                                opacity: card.characterId ? 1 : 0.7,
+                              }}
+                            >
+                              <Users size={13} />
+                            </button>
+                          )}
 
-                    {/* Connect Link Port */}
-                    <button
-                      className="card-btn-action"
-                      onClick={() => handlePortClick(card.id)}
-                      title={isConnecting ? 'Cancel link' : 'Connect thread to another card'}
-                      style={{
-                        padding: '3px',
-                        color: isConnecting ? 'var(--accent)' : 'inherit',
-                        opacity: isConnecting ? 1 : 0.7,
-                      }}
-                    >
-                      <LinkIcon size={13} />
-                    </button>
+                          {/* Add Image File Button */}
+                          <label
+                            className="card-btn-action"
+                            title="Attach image from computer"
+                            style={{
+                              cursor: 'pointer',
+                              padding: '3px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              opacity: 0.7,
+                            }}
+                          >
+                            <ImageIcon size={13} />
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={(e) => handleImageUpload(card.id, e)}
+                              style={{ display: 'none' }}
+                            />
+                          </label>
 
-                    {/* Delete Card */}
-                    <button
-                      className="card-btn-action"
-                      onClick={() => handleDeleteCard(card.id)}
-                      title="Delete card"
-                      style={{ opacity: 0.7, padding: '3px' }}
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  </div>
-                </div>
+                          {/* Add YouTube Video Link */}
+                          <button
+                            className="card-btn-action"
+                            onClick={() => {
+                              setActiveMediaInput({ cardId: card.id, type: 'youtube' });
+                              setMediaUrlInput(card.youtubeUrl || '');
+                            }}
+                            title="Attach YouTube music / video"
+                            style={{ opacity: 0.7, padding: '3px' }}
+                          >
+                            <YoutubeIcon size={13} style={{ color: '#dc2626' }} />
+                          </button>
+
+                          {/* Connect Link Port */}
+                          <button
+                            className="card-btn-action"
+                            onClick={() => handlePortClick(card.id)}
+                            title={isConnecting ? 'Cancel link' : 'Connect thread to another card'}
+                            style={{
+                              padding: '3px',
+                              color: isConnecting ? 'var(--accent)' : 'inherit',
+                              opacity: isConnecting ? 1 : 0.7,
+                            }}
+                          >
+                            <LinkIcon size={13} />
+                          </button>
+
+                          {/* Delete Card */}
+                          <button
+                            className="card-btn-action"
+                            onClick={() => handleDeleteCard(card.id)}
+                            title="Delete card"
+                            style={{ opacity: 0.7, padding: '3px' }}
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Linked Character / Monster Stats HUD */}
+                      {linkedChar ? (
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            background: isDarkCard ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.04)',
+                            borderRadius: '6px',
+                            padding: '4px 8px',
+                            border: `1px solid ${isMonsterCard ? 'rgba(239,68,68,0.3)' : 'rgba(176,86,122,0.3)'}`,
+                            gap: '6px',
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden', flex: 1 }}>
+                            <span style={{ fontSize: '0.88rem' }}>{isMonsterCard ? '👹' : '👤'}</span>
+                            <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                              <span style={{ fontSize: '0.74rem', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {linkedChar.name}
+                              </span>
+                              <span style={{ fontSize: '0.67rem', opacity: 0.8, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {getCharacterSummaryString(linkedChar)}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '3px', flexShrink: 0 }}>
+                            <button
+                              className="card-btn-action"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setActiveSheetChar(linkedChar);
+                              }}
+                              title="Quick view sheet & stats"
+                              style={{ padding: '2px 5px', fontSize: '0.68rem', display: 'flex', alignItems: 'center', gap: '3px', background: 'var(--panel)', borderRadius: '4px', border: '1px solid var(--line)' }}
+                            >
+                              <Eye size={11} />
+                              <span>Sheet</span>
+                            </button>
+                            {onNavigateToCharacter && (
+                              <button
+                                className="card-btn-action"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onNavigateToCharacter(linkedChar.id);
+                                }}
+                                title="Open in Characters & Monsters section"
+                                style={{ padding: '2px 4px', background: 'var(--panel)', borderRadius: '4px', border: '1px solid var(--line)' }}
+                              >
+                                <ExternalLink size={10} />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ) : isCharOrMonster && characters && characters.length > 0 ? (
+                        <button
+                          className="card-btn-action"
+                          onClick={() => {
+                            setLinkingCardId(card.id);
+                            setIsRosterPickerOpen(true);
+                          }}
+                          style={{
+                            fontSize: '0.72rem',
+                            padding: '3px 8px',
+                            borderRadius: '5px',
+                            border: '1px dashed rgba(0,0,0,0.2)',
+                            background: 'rgba(255,255,255,0.4)',
+                            color: 'var(--accent)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '4px',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <Users size={11} />
+                          <span>Link to Cast or Monster Sheet</span>
+                        </button>
+                      ) : null}
+                    </>
+                  );
+                })()}
 
                 {/* Card Title Input */}
                 <input
@@ -1987,6 +2206,192 @@ export const StoryboardView: React.FC<StoryboardViewProps> = ({
                   Save Changes
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Active Character Sheet Modal */}
+      {activeSheetChar && (
+        <CharacterSheetModal
+          character={activeSheetChar}
+          onClose={() => setActiveSheetChar(null)}
+          onNavigateToCharacterBuilder={onNavigateToCharacter}
+        />
+      )}
+
+      {/* Roster Picker Modal (Spawn or Link Character/Monster) */}
+      {isRosterPickerOpen && (
+        <div className="modal-overlay" onClick={() => setIsRosterPickerOpen(false)}>
+          <div
+            className="modal-dialog"
+            style={{ maxWidth: '580px', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Users size={18} style={{ color: 'var(--accent)' }} />
+                <h3 style={{ fontSize: '1.15rem' }}>
+                  {linkingCardId ? 'Link Card to Character / Monster' : 'Spawn Card from Cast & Bestiary'}
+                </h3>
+              </div>
+              <button className="icon-btn" onClick={() => setIsRosterPickerOpen(false)}>
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '12px', overflowY: 'auto' }}>
+              <p style={{ fontSize: '0.84rem', color: 'var(--muted)', margin: 0 }}>
+                {linkingCardId
+                  ? 'Select a character or monster below to link directly to this storyboard card.'
+                  : 'Select a hero or monster from your roster to place a pre-filled card onto your storyboard.'}
+              </p>
+
+              {/* Filter Pills */}
+              <div style={{ display: 'flex', gap: '6px', background: 'var(--bg)', padding: '3px', borderRadius: '8px', border: '1px solid var(--line)' }}>
+                <button
+                  type="button"
+                  className={`chip ${pickerFilter === 'all' ? 'active' : ''}`}
+                  onClick={() => setPickerFilter('all')}
+                  style={{ flex: 1, justifyContent: 'center', fontSize: '0.76rem', padding: '4px' }}
+                >
+                  All ({characters.length})
+                </button>
+                <button
+                  type="button"
+                  className={`chip ${pickerFilter === 'character' ? 'active' : ''}`}
+                  onClick={() => setPickerFilter('character')}
+                  style={{ flex: 1, justifyContent: 'center', fontSize: '0.76rem', padding: '4px' }}
+                >
+                  👤 Cast ({characters.filter((c) => c.entityKind !== 'monster').length})
+                </button>
+                <button
+                  type="button"
+                  className={`chip ${pickerFilter === 'monster' ? 'active' : ''}`}
+                  onClick={() => setPickerFilter('monster')}
+                  style={{ flex: 1, justifyContent: 'center', fontSize: '0.76rem', padding: '4px', color: pickerFilter === 'monster' ? '#fff' : '#b91c1c' }}
+                >
+                  👹 Monsters ({characters.filter((c) => c.entityKind === 'monster').length})
+                </button>
+              </div>
+
+              {/* Search */}
+              <div style={{ position: 'relative' }}>
+                <Search size={14} style={{ position: 'absolute', left: '10px', top: '10px', color: 'var(--muted)' }} />
+                <input
+                  type="text"
+                  placeholder="Search by name, role, system..."
+                  value={pickerSearch}
+                  onChange={(e) => setPickerSearch(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '8px 10px 8px 30px',
+                    fontSize: '0.85rem',
+                    background: 'var(--bg)',
+                    border: '1px solid var(--line)',
+                    borderRadius: '6px',
+                    color: 'var(--ink)',
+                  }}
+                />
+              </div>
+
+              {/* Character List */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '340px', overflowY: 'auto' }}>
+                {characters
+                  .filter((c) => {
+                    const isMonster = c.entityKind === 'monster';
+                    if (pickerFilter === 'character' && isMonster) return false;
+                    if (pickerFilter === 'monster' && !isMonster) return false;
+                    if (!pickerSearch.trim()) return true;
+                    const q = pickerSearch.toLowerCase();
+                    return (
+                      c.name.toLowerCase().includes(q) ||
+                      (c.role || '').toLowerCase().includes(q) ||
+                      (c.archetype || '').toLowerCase().includes(q) ||
+                      (c.sheetSystem || '').toLowerCase().includes(q)
+                    );
+                  })
+                  .map((char) => {
+                    const isMonster = char.entityKind === 'monster';
+                    return (
+                      <div
+                        key={char.id}
+                        onClick={() => {
+                          if (linkingCardId) {
+                            handleLinkCardToCharacter(linkingCardId, char);
+                          } else {
+                            handleSpawnFromCharacter(char);
+                          }
+                        }}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '10px 14px',
+                          background: 'var(--bg)',
+                          border: `1px solid ${isMonster ? 'rgba(239, 68, 68, 0.25)' : 'var(--line)'}`,
+                          borderRadius: '8px',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.borderColor = 'var(--accent)';
+                          e.currentTarget.style.transform = 'translateY(-1px)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.borderColor = isMonster ? 'rgba(239, 68, 68, 0.25)' : 'var(--line)';
+                          e.currentTarget.style.transform = 'none';
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <span style={{ fontSize: '1.3rem' }}>{isMonster ? '👹' : '👤'}</span>
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span style={{ fontWeight: 600, fontSize: '0.92rem' }}>{char.name}</span>
+                              {char.sheetSystem && char.sheetSystem !== 'narrative' && (
+                                <span
+                                  style={{
+                                    fontSize: '0.66rem',
+                                    padding: '1px 6px',
+                                    borderRadius: '4px',
+                                    background: 'var(--accent-glow, rgba(186, 117, 23, 0.12))',
+                                    color: 'var(--accent)',
+                                    fontWeight: 700,
+                                    textTransform: 'uppercase',
+                                  }}
+                                >
+                                  {char.sheetSystem === 'dnd5e'
+                                    ? '5E'
+                                    : char.sheetSystem === 'shadowdark'
+                                    ? 'ShadowDark'
+                                    : char.sheetSystem === 'valiant'
+                                    ? 'Valiant'
+                                    : 'Custom'}
+                                </span>
+                              )}
+                            </div>
+                            <span style={{ fontSize: '0.76rem', color: 'var(--muted)' }}>
+                              {getCharacterSummaryString(char)}
+                            </span>
+                          </div>
+                        </div>
+
+                        <button
+                          className="action-btn-primary"
+                          style={{ fontSize: '0.74rem', padding: '4px 10px', pointerEvents: 'none' }}
+                        >
+                          {linkingCardId ? 'Link' : '+ Place Card'}
+                        </button>
+                      </div>
+                    );
+                  })}
+              </div>
+            </div>
+
+            <div className="modal-footer" style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button className="action-btn-secondary" onClick={() => setIsRosterPickerOpen(false)}>
+                Cancel
+              </button>
             </div>
           </div>
         </div>

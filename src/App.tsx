@@ -75,6 +75,12 @@ export const App: React.FC = () => {
   // Views & Routing
   const [currentView, setCurrentView] = useState<string>('dashboard');
   const [activeStory, setActiveStory] = useState<Story | null>(null);
+  const [selectedCharacterId, setSelectedCharacterId] = useState<string | undefined>(undefined);
+
+  const handleNavigateToCharacter = (charId: string) => {
+    setSelectedCharacterId(charId);
+    setCurrentView('characters');
+  };
 
   // Modals
   const [searchQuery, setSearchQuery] = useState('');
@@ -681,6 +687,7 @@ export const App: React.FC = () => {
             }}
             stories={stories}
             maps={maps}
+            characters={characters}
             onNavigateToStory={(storyId, chapterId) => {
               const target = stories.find((s) => s.id === storyId);
               if (target) {
@@ -692,6 +699,7 @@ export const App: React.FC = () => {
               setActiveMapId(mapId);
               setCurrentView('maps');
             }}
+            onNavigateToCharacter={handleNavigateToCharacter}
             onExportToDrive={async (title, data) => {
               if (config.googleAccessToken) {
                 await exportStoryboardToDrive(
@@ -707,6 +715,7 @@ export const App: React.FC = () => {
         ) : currentView === 'characters' ? (
           <CharacterBuilderView
             characters={characters}
+            initialSelectedId={selectedCharacterId}
             onUpdateCharacters={(newChars) => {
               setCharacters(newChars);
               setCharactersLastModified(Date.now());
@@ -729,6 +738,8 @@ export const App: React.FC = () => {
             maps={maps}
             activeMapId={activeMapId}
             onSelectMap={setActiveMapId}
+            characters={characters}
+            onNavigateToCharacter={handleNavigateToCharacter}
             onUpdateMaps={(newMaps) => {
               setMaps(newMaps);
               setMapsLastModified(Date.now());

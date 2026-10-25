@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Plus,
   UserPlus,
@@ -42,21 +42,38 @@ interface CharacterBuilderViewProps {
   characters: Character[];
   onUpdateCharacters: (chars: Character[]) => void;
   onSyncDrive: () => Promise<void>;
+  initialSelectedId?: string;
 }
 
 export const CharacterBuilderView: React.FC<CharacterBuilderViewProps> = ({
   characters,
   onUpdateCharacters,
   onSyncDrive,
+  initialSelectedId,
 }) => {
   const [selectedCharId, setSelectedCharId] = useState<string>(
-    characters[0]?.id || ''
+    initialSelectedId && characters.some((c) => c.id === initialSelectedId)
+      ? initialSelectedId
+      : characters[0]?.id || ''
   );
-  const [activeTab, setActiveTab] = useState<'narrative' | 'sheet'>('narrative');
+  const [activeTab, setActiveTab] = useState<'narrative' | 'sheet'>(() => {
+    const initChar = characters.find((c) => c.id === (initialSelectedId || characters[0]?.id));
+    return initChar?.sheetSystem && initChar.sheetSystem !== 'narrative' ? 'sheet' : 'narrative';
+  });
   const [entityFilter, setEntityFilter] = useState<'all' | 'character' | 'monster'>('all');
   const [systemFilter, setSystemFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [isSyncing, setIsSyncing] = useState(false);
+
+  useEffect(() => {
+    if (initialSelectedId && characters.some((c) => c.id === initialSelectedId)) {
+      setSelectedCharId(initialSelectedId);
+      const target = characters.find((c) => c.id === initialSelectedId);
+      if (target?.sheetSystem && target.sheetSystem !== 'narrative') {
+        setActiveTab('sheet');
+      }
+    }
+  }, [initialSelectedId, characters]);
 
   const selectedChar = characters.find((c) => c.id === selectedCharId) || characters[0] || null;
 

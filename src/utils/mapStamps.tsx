@@ -249,6 +249,34 @@ export const MapStampIcon: React.FC<StampProps> = ({
         </svg>
       );
 
+    case 'character_token':
+      return (
+        <svg width={size} height={size} viewBox="0 0 100 100" className={className}>
+          <path d="M 50 10 L 80 20 L 80 50 Q 80 80 50 94 Q 20 80 20 50 L 20 20 Z" fill={color} />
+          <path d="M 50 16 L 74 24 L 74 48 Q 74 74 50 86 Q 26 74 26 48 L 26 24 Z" fill="#fffdf9" />
+          <circle cx="50" cy="38" r="12" fill={color} />
+          <path d="M 34 66 Q 34 52 50 52 Q 66 52 66 66 Z" fill={color} />
+        </svg>
+      );
+
+    case 'monster_token':
+      return (
+        <svg width={size} height={size} viewBox="0 0 100 100" className={className}>
+          <circle cx="50" cy="50" r="42" fill={color} />
+          <circle cx="50" cy="50" r="36" fill="#fffdf9" />
+          <path d="M 32 36 Q 20 18 30 14 Q 38 24 38 34 Z" fill={color} />
+          <path d="M 68 36 Q 80 18 70 14 Q 62 24 62 34 Z" fill={color} />
+          <ellipse cx="50" cy="44" rx="20" ry="17" fill={color} />
+          <rect x="42" y="56" width="16" height="13" rx="3" fill={color} />
+          <ellipse cx="43" cy="44" rx="5" ry="6" fill="#fffdf9" />
+          <ellipse cx="57" cy="44" rx="5" ry="6" fill="#fffdf9" />
+          <polygon points="50,51 47,56 53,56" fill="#fffdf9" />
+          <rect x="44" y="62" width="2" height="4" fill="#fffdf9" />
+          <rect x="49" y="62" width="2" height="4" fill="#fffdf9" />
+          <rect x="54" y="62" width="2" height="4" fill="#fffdf9" />
+        </svg>
+      );
+
     default:
       return (
         <svg width={size} height={size} viewBox="0 0 24 24" fill={color}>

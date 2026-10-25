@@ -28,9 +28,15 @@ import {
   Check,
   Link2,
   X,
+  Users,
+  Skull,
+  Eye,
+  ExternalLink,
+  Shield,
 } from 'lucide-react';
-import { WorldMap, MapStamp, MapAspect, MapStyle, MapPath, Story, StoryboardData } from '../types';
+import { WorldMap, MapStamp, MapAspect, MapStyle, MapPath, Story, StoryboardData, Character } from '../types';
 import { MapStampIcon } from '../utils/mapStamps';
+import { CharacterSheetModal } from './characterSheets/CharacterSheetModal';
 
 interface MapMakerViewProps {
   maps: WorldMap[];
@@ -41,10 +47,12 @@ interface MapMakerViewProps {
   onDeleteMap?: (id: string) => void;
   stories?: Story[];
   storyboards?: StoryboardData[];
+  characters?: Character[];
   onOpenStoryboard?: (storyboardId: string) => void;
   onCreateStoryboardForLocation?: (mapId: string, stampId: string, stampName: string) => void;
   onSyncDrive?: () => Promise<void>;
   onNavigateToStory?: (storyId: string, chapterId?: string) => void;
+  onNavigateToCharacter?: (id: string) => void;
 }
 
 type ToolMode = 'stamp' | 'draw' | 'select';
@@ -105,14 +113,20 @@ export const MapMakerView: React.FC<MapMakerViewProps> = ({
   onDeleteMap,
   stories = [],
   storyboards = [],
+  characters = [],
   onOpenStoryboard,
   onCreateStoryboardForLocation,
   onSyncDrive,
   onNavigateToStory,
+  onNavigateToCharacter,
 }) => {
   const [selectedMapId, setSelectedMapId] = useState<string>(
     activeMapId || maps[0]?.id || 'map-1'
   );
+
+  // Character sheet preview modal state
+  const [activeSheetChar, setActiveSheetChar] = useState<Character | null>(null);
+  const [isInhabitantsOpen, setIsInhabitantsOpen] = useState(false);
 
   useEffect(() => {
     if (activeMapId) setSelectedMapId(activeMapId);
@@ -131,6 +145,88 @@ export const MapMakerView: React.FC<MapMakerViewProps> = ({
       realms: [],
       updatedAt: Date.now(),
     };
+
+  const allStampCategories: StampCategory[] = [
+    ...STAMP_CATEGORIES,
+    {
+      name: 'Cast & Bestiary',
+      items: [
+        { type: 'character_token', label: 'Cast Hero' },
+        { type: 'monster_token', label: 'Monster Foe' },
+        ...characters.map((c) => ({
+          type: `char:${c.id}`,
+          label: c.name,
+        })),
+      ],
+    },
+  ];
+
+  const getCharacterSummaryString = (char: Character): string => {
+    const isMonster = char.entityKind === 'monster';
+    const sys = char.sheetSystem || 'narrative';
+
+    if (sys === 'dnd5e') {
+      if (isMonster && char.dnd5eMonster) {
+        const m = char.dnd5eMonster;
+        return `5E · CR ${m.cr || '1'} · AC ${m.ac || '10'} · HP ${m.hp || '10'}`;
+      } else if (char.dnd5eSheet) {
+        const s = char.dnd5eSheet;
+        return `5E · ${s.classLevel || 'Hero'} · AC ${s.ac ?? 10} · HP ${s.hpCurrent ?? s.hpMax ?? 10}/${s.hpMax ?? 10}`;
+      }
+    } else if (sys === 'shadowdark') {
+      if (isMonster && char.shadowdarkMonster) {
+        const m = char.shadowdarkMonster;
+        return `ShadowDark · LV ${m.level || 1} · AC ${m.ac || 10} · HP ${m.hp || '10'}`;
+      } else if (char.shadowdarkSheet) {
+        const s = char.shadowdarkSheet;
+        return `ShadowDark · ${s.characterClass || 'Adventurer'} · AC ${s.ac || 10} · HP ${s.hpCurrent ?? s.hpMax ?? 10}`;
+      }
+    } else if (sys === 'valiant') {
+      if (isMonster && char.valiantMonster) {
+        const m = char.valiantMonster;
+        return `Valiant · CR ${m.cr || '1'} · AC ${m.ac || '10'} · HP ${m.hp || '10'}`;
+      } else if (char.valiantSheet) {
+        const s = char.valiantSheet;
+        return `Valiant · ${s.classLevel || 'Hero'} · AC ${s.ac || 10} · HP ${s.hpCurrent ?? s.hpMax ?? 10}`;
+      }
+    } else if (sys === 'custom' && char.customSheet) {
+      const s = char.customSheet;
+      const pool = (s.resourcePools || [])[0];
+      return `${s.systemName || 'Custom'}${pool ? ` · ${pool.name}: ${pool.current}/${pool.max}` : ''}`;
+    }
+
+    return char.role ? `${char.role}` : (isMonster ? 'Adversary' : 'Cast');
+  };
+
+  const handleAssignCharacterToStamp = (stampId: string, charId: string) => {
+    const updatedStamps = (currentMap.stamps || []).map((s) => {
+      if (s.id === stampId) {
+        const currentIds = s.characterIds || [];
+        if (!currentIds.includes(charId)) {
+          return { ...s, characterIds: [...currentIds, charId] };
+        }
+      }
+      return s;
+    });
+    saveMap({ ...currentMap, stamps: updatedStamps, updatedAt: Date.now() });
+  };
+
+  const handleUnassignCharacterFromStamp = (stampId: string, charId: string) => {
+    const updatedStamps = (currentMap.stamps || []).map((s) => {
+      if (s.id === stampId) {
+        return { ...s, characterIds: (s.characterIds || []).filter((id) => id !== charId) };
+      }
+      return s;
+    });
+    saveMap({ ...currentMap, stamps: updatedStamps, updatedAt: Date.now() });
+  };
+
+  const handleUpdateEncounterNotes = (stampId: string, notes: string) => {
+    const updatedStamps = (currentMap.stamps || []).map((s) =>
+      s.id === stampId ? { ...s, encounterNotes: notes } : s
+    );
+    saveMap({ ...currentMap, stamps: updatedStamps, updatedAt: Date.now() });
+  };
 
   const [mode, setMode] = useState<ToolMode>('stamp');
   const [activeCategoryIndex, setActiveCategoryIndex] = useState(0);
@@ -403,13 +499,28 @@ export const MapMakerView: React.FC<MapMakerViewProps> = ({
       const target = (e.target as HTMLElement).closest('.map-stamp-container');
       if (target) return;
 
+      let stampType = activeStampType;
+      let linkedCharId: string | undefined = undefined;
+      let defaultLabel = allStampCategories[activeCategoryIndex]?.items.find((i) => i.type === activeStampType)?.label || '';
+
+      if (activeStampType.startsWith('char:')) {
+        const cId = activeStampType.replace('char:', '');
+        const char = characters.find((c) => c.id === cId);
+        if (char) {
+          linkedCharId = char.id;
+          stampType = char.entityKind === 'monster' ? 'monster_token' : 'character_token';
+          defaultLabel = char.name;
+        }
+      }
+
       const newStamp: MapStamp = {
         id: `stamp-${Date.now()}`,
-        type: activeStampType,
+        type: stampType,
         x: coords.x,
         y: coords.y,
         scale: stampScale,
-        label: STAMP_CATEGORIES[activeCategoryIndex]?.items.find((i) => i.type === activeStampType)?.label || '',
+        label: defaultLabel,
+        characterId: linkedCharId,
       };
 
       const updated: WorldMap = {
@@ -1070,7 +1181,7 @@ export const MapMakerView: React.FC<MapMakerViewProps> = ({
           <div>
             {/* Category tabs */}
             <div style={{ display: 'flex', gap: '6px', marginBottom: '12px', overflowX: 'auto', paddingBottom: '4px' }}>
-              {STAMP_CATEGORIES.map((cat, idx) => (
+              {allStampCategories.map((cat, idx) => (
                 <button
                   key={cat.name}
                   className={`chip ${activeCategoryIndex === idx ? 'active' : ''}`}
@@ -1107,8 +1218,17 @@ export const MapMakerView: React.FC<MapMakerViewProps> = ({
 
             {/* Stamps list */}
             <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingBottom: '6px' }}>
-              {STAMP_CATEGORIES[activeCategoryIndex]?.items.map((st) => {
+              {allStampCategories[activeCategoryIndex]?.items.map((st) => {
                 const isCur = activeStampType === st.type;
+                let iconType = st.type;
+                let charBadge: string | null = null;
+                if (st.type.startsWith('char:')) {
+                  const cId = st.type.replace('char:', '');
+                  const char = characters.find((c) => c.id === cId);
+                  iconType = char?.entityKind === 'monster' ? 'monster_token' : 'character_token';
+                  charBadge = char?.entityKind === 'monster' ? '👹' : '👤';
+                }
+
                 return (
                   <button
                     key={st.type}
@@ -1127,7 +1247,14 @@ export const MapMakerView: React.FC<MapMakerViewProps> = ({
                       minWidth: '68px',
                     }}
                   >
-                    <MapStampIcon type={st.type} size={28} color="var(--ink)" />
+                    <div style={{ position: 'relative' }}>
+                      <MapStampIcon type={iconType} size={28} color="var(--ink)" />
+                      {charBadge && (
+                        <span style={{ position: 'absolute', top: '-4px', right: '-6px', fontSize: '0.75rem' }}>
+                          {charBadge}
+                        </span>
+                      )}
+                    </div>
                     <span style={{ fontSize: '0.75rem', color: isCur ? 'var(--accent)' : 'var(--ink)', fontWeight: 500 }}>
                       {st.label}
                     </span>
@@ -1417,6 +1544,66 @@ export const MapMakerView: React.FC<MapMakerViewProps> = ({
                       </text>
                     </g>
                   )}
+
+                  {/* Character / Monster Token Badge */}
+                  {st.characterId && (() => {
+                    const char = characters.find((c) => c.id === st.characterId);
+                    if (!char) return null;
+                    const isMonster = char.entityKind === 'monster';
+                    return (
+                      <g
+                        transform={`translate(-4, -4)`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setActiveSheetChar(char);
+                        }}
+                        style={{ cursor: 'pointer' }}
+                      >
+                        <title>{`${char.name} (${isMonster ? 'Monster' : 'Character'}): Click to view sheet`}</title>
+                        <circle
+                          cx="6"
+                          cy="6"
+                          r="7.5"
+                          fill={isMonster ? '#fef2f2' : '#f5f3ff'}
+                          stroke={isMonster ? '#dc2626' : '#7c3aed'}
+                          strokeWidth="1.5"
+                        />
+                        <text x="6" y="9" textAnchor="middle" fontSize="8" fontWeight="bold">
+                          {isMonster ? '👹' : '👤'}
+                        </text>
+                      </g>
+                    );
+                  })()}
+
+                  {/* Assigned Inhabitants Badge */}
+                  {!st.characterId && st.characterIds && st.characterIds.length > 0 && (() => {
+                    const assignedList = characters.filter((c) => st.characterIds?.includes(c.id));
+                    const monsterCount = assignedList.filter((c) => c.entityKind === 'monster').length;
+                    return (
+                      <g
+                        transform={`translate(-4, -4)`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedStampId(st.id);
+                          setIsInhabitantsOpen(true);
+                        }}
+                        style={{ cursor: 'pointer' }}
+                      >
+                        <title>{`Stationed here: ${assignedList.map((c) => c.name).join(', ')}`}</title>
+                        <circle
+                          cx="6"
+                          cy="6"
+                          r="7.5"
+                          fill={monsterCount > 0 ? '#fef2f2' : '#f0fdf4'}
+                          stroke={monsterCount > 0 ? '#dc2626' : '#16a34a'}
+                          strokeWidth="1.5"
+                        />
+                        <text x="6" y="9" textAnchor="middle" fontSize="8" fontWeight="bold">
+                          {monsterCount > 0 ? '👹' : '👤'}
+                        </text>
+                      </g>
+                    );
+                  })()}
                 </g>
               );
             })}
@@ -1572,6 +1759,199 @@ export const MapMakerView: React.FC<MapMakerViewProps> = ({
               <Trash2 size={16} />
             </button>
           </div>
+
+          {/* Linked Character / Monster HUD */}
+          {selectedStamp.characterId && (() => {
+            const char = characters.find((c) => c.id === selectedStamp.characterId);
+            if (!char) return null;
+            const isMonster = char.entityKind === 'monster';
+            return (
+              <div
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '8px 12px',
+                  background: isMonster ? 'rgba(239, 68, 68, 0.08)' : 'rgba(124, 58, 237, 0.08)',
+                  border: `1px solid ${isMonster ? 'rgba(239, 68, 68, 0.25)' : 'rgba(124, 58, 237, 0.25)'}`,
+                  borderRadius: '8px',
+                  gap: '8px',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '1.2rem' }}>{isMonster ? '👹' : '👤'}</span>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ fontWeight: 700, fontSize: '0.88rem' }}>{char.name}</span>
+                      <span
+                        style={{
+                          fontSize: '0.66rem',
+                          padding: '1px 6px',
+                          borderRadius: '10px',
+                          fontWeight: 700,
+                          textTransform: 'uppercase',
+                          background: isMonster ? '#fef2f2' : '#f5f3ff',
+                          color: isMonster ? '#b91c1c' : '#6d28d9',
+                        }}
+                      >
+                        {isMonster ? 'Monster / Foe' : 'Hero / Cast'}
+                      </span>
+                    </div>
+                    <span style={{ fontSize: '0.76rem', color: 'var(--muted)' }}>
+                      {getCharacterSummaryString(char)}
+                    </span>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <button
+                    className="action-btn-primary"
+                    onClick={() => setActiveSheetChar(char)}
+                    style={{ fontSize: '0.74rem', padding: '4px 8px', gap: '4px' }}
+                  >
+                    <Eye size={12} />
+                    <span>View Sheet</span>
+                  </button>
+                  {onNavigateToCharacter && (
+                    <button
+                      className="action-btn-secondary"
+                      onClick={() => onNavigateToCharacter(char.id)}
+                      style={{ fontSize: '0.74rem', padding: '4px 8px', gap: '4px' }}
+                      title="Open full Character Builder"
+                    >
+                      <ExternalLink size={12} />
+                      <span>Builder</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Location Inhabitants & Encounters Toggle */}
+          {!selectedStamp.characterId && (
+            <div style={{ width: '100%', borderTop: '1px dashed var(--line)', paddingTop: '10px', marginTop: '4px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: isInhabitantsOpen ? '8px' : '0' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Users size={14} style={{ color: 'var(--accent)' }} />
+                  <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>
+                    Inhabitants & Encounters ({selectedStamp.characterIds?.length || 0})
+                  </span>
+                </div>
+                <button
+                  className="chip"
+                  onClick={() => setIsInhabitantsOpen(!isInhabitantsOpen)}
+                  style={{ fontSize: '0.72rem', padding: '2px 8px' }}
+                >
+                  {isInhabitantsOpen ? 'Hide' : 'Manage Inhabitants'}
+                </button>
+              </div>
+
+              {isInhabitantsOpen && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
+                  {/* Assigned list */}
+                  {(selectedStamp.characterIds || []).length > 0 ? (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                      {(selectedStamp.characterIds || []).map((cId) => {
+                        const char = characters.find((c) => c.id === cId);
+                        if (!char) return null;
+                        const isMonster = char.entityKind === 'monster';
+                        return (
+                          <div
+                            key={cId}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              background: isMonster ? 'rgba(239, 68, 68, 0.08)' : 'rgba(0,0,0,0.05)',
+                              border: `1px solid ${isMonster ? 'rgba(239, 68, 68, 0.25)' : 'var(--line)'}`,
+                              borderRadius: '6px',
+                              padding: '3px 8px',
+                              fontSize: '0.76rem',
+                            }}
+                          >
+                            <span>{isMonster ? '👹' : '👤'}</span>
+                            <span style={{ fontWeight: 600 }}>{char.name}</span>
+                            <button
+                              onClick={() => setActiveSheetChar(char)}
+                              title="View sheet"
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', padding: '0 2px' }}
+                            >
+                              <Eye size={11} />
+                            </button>
+                            <button
+                              onClick={() => handleUnassignCharacterFromStamp(selectedStamp.id, cId)}
+                              title="Remove from location"
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--crit)', padding: '0 2px' }}
+                            >
+                              <X size={11} />
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p style={{ fontSize: '0.76rem', color: 'var(--muted)', margin: 0 }}>
+                      No characters or monsters stationed at this landmark yet.
+                    </p>
+                  )}
+
+                  {/* Add inhabitant dropdown */}
+                  {characters.length > 0 && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <select
+                        onChange={(e) => {
+                          if (e.target.value) {
+                            handleAssignCharacterToStamp(selectedStamp.id, e.target.value);
+                            e.target.value = '';
+                          }
+                        }}
+                        defaultValue=""
+                        style={{
+                          flex: 1,
+                          padding: '5px 8px',
+                          background: 'var(--bg)',
+                          border: '1px solid var(--line)',
+                          borderRadius: '6px',
+                          fontSize: '0.78rem',
+                          color: 'var(--ink)',
+                        }}
+                      >
+                        <option value="">+ Station Character or Monster here…</option>
+                        {characters
+                          .filter((c) => !(selectedStamp.characterIds || []).includes(c.id))
+                          .map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.entityKind === 'monster' ? '👹 ' : '👤 '}
+                              {c.name} ({c.sheetSystem?.toUpperCase() || 'NARRATIVE'})
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {/* Notes for encounter */}
+                  <textarea
+                    placeholder="Encounter lore, enemy tactics, or local NPC dialogue…"
+                    value={selectedStamp.encounterNotes || ''}
+                    onChange={(e) => handleUpdateEncounterNotes(selectedStamp.id, e.target.value)}
+                    rows={2}
+                    style={{
+                      width: '100%',
+                      background: 'var(--bg)',
+                      border: '1px solid var(--line)',
+                      borderRadius: '6px',
+                      padding: '6px 8px',
+                      fontSize: '0.78rem',
+                      color: 'var(--ink)',
+                      resize: 'vertical',
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -1879,6 +2259,15 @@ export const MapMakerView: React.FC<MapMakerViewProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Active Character / Monster Sheet Modal */}
+      {activeSheetChar && (
+        <CharacterSheetModal
+          character={activeSheetChar}
+          onClose={() => setActiveSheetChar(null)}
+          onNavigateToCharacterBuilder={onNavigateToCharacter}
+        />
       )}
     </div>
   );
