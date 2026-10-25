@@ -95,7 +95,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className="brand-header">
         <BrandLogo size={28} />
         <span className="brand-title">Storyboard</span>
-        <span className="brand-badge">Studio</span>
         {onCloseMobile && (
           <button
             className="icon-btn mobile-close-sidebar-btn"

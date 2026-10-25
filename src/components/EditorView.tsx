@@ -24,6 +24,7 @@ import {
   Columns,
   Split,
   X,
+  Upload,
 } from 'lucide-react';
 import { Story, Character, StoryboardData, WorldMap, BookChapter, BookPage, StoryStatus } from '../types';
 import { MapStampIcon } from '../utils/mapStamps';
@@ -36,6 +37,7 @@ import {
   splitTextIntoLetterPages,
 } from '../utils/chapterHelpers';
 import { ExportModal } from './ExportModal';
+import { UploadChapterModal } from './UploadChapterModal';
 import { saveStoryToDrive } from '../services/googleDrive';
 
 interface EditorViewProps {
@@ -101,6 +103,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
   const [layoutMode, setLayoutMode] = useState<'word-pages' | 'single-sheet'>('word-pages');
   const [fullScreen, setFullScreen] = useState(false);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [isUploadChapterOpen, setIsUploadChapterOpen] = useState(false);
 
   // Sync state
   const [isSavingDrive, setIsSavingDrive] = useState(false);
@@ -297,6 +300,27 @@ export const EditorView: React.FC<EditorViewProps> = ({
     setActivePageId(newPageId);
   };
 
+  const handleChapterUploaded = (newChapter: BookChapter) => {
+    const updated = [...chapters, newChapter];
+    setChapters(updated);
+    setActiveChapterId(newChapter.id);
+    if (newChapter.pages.length > 0) {
+      setActivePageId(newChapter.pages[0].id);
+    }
+    const newBody = compileBookManuscript(bookTitle, updated);
+    const newTotalWords = calculateBookWords(updated);
+    const updatedStory: Story = {
+      ...story,
+      body: newBody,
+      words: newTotalWords,
+      chapters: updated,
+      activeChapterId: newChapter.id,
+      activePageId: newChapter.pages[0]?.id,
+      edited: Date.now(),
+    };
+    onUpdateStory(updatedStory);
+  };
+
   const handleDeleteChapter = (chapId: string, chapTitle: string) => {
     if (chapters.length <= 1) {
       alert('Your book must have at least one chapter.');
@@ -474,14 +498,23 @@ export const EditorView: React.FC<EditorViewProps> = ({
                   {chapters.length} chapter{chapters.length > 1 ? 's' : ''} · {bookTotalWords.toLocaleString()} words
                 </div>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <button
+                  className="action-btn-secondary"
+                  style={{ padding: '5px 7px', fontSize: '0.76rem', gap: '4px' }}
+                  onClick={() => setIsUploadChapterOpen(true)}
+                  title="Upload a document (.pdf, .docx, .doc, .md, .txt) as a new chapter"
+                >
+                  <Upload size={12} />
+                  <span>Upload</span>
+                </button>
                 <button
                   className="action-btn-primary"
-                  style={{ padding: '5px 9px', fontSize: '0.78rem' }}
+                  style={{ padding: '5px 8px', fontSize: '0.76rem', gap: '4px' }}
                   onClick={handleAddChapter}
-                  title="Add a new Chapter document"
+                  title="Add a new blank Chapter document"
                 >
-                  <Plus size={13} />
+                  <Plus size={12} />
                   <span>Chapter</span>
                 </button>
                 <button
@@ -766,6 +799,17 @@ export const EditorView: React.FC<EditorViewProps> = ({
             >
               <Split size={14} />
               <span>Split Pages</span>
+            </button>
+
+            {/* Upload Chapter Button */}
+            <button
+              className="action-btn-secondary"
+              onClick={() => setIsUploadChapterOpen(true)}
+              title="Upload a document (.pdf, .docx, .doc, .md, .txt) as a new chapter"
+              style={{ gap: '6px', fontSize: '0.8rem' }}
+            >
+              <Upload size={14} />
+              <span>Upload Chapter</span>
             </button>
 
             {/* Multi-Scope Export Button */}
@@ -1433,6 +1477,14 @@ export const EditorView: React.FC<EditorViewProps> = ({
         bookNotes={bookNotes}
         onSaveToDrive={handleSaveExportToDrive}
         driveFolderName={driveFolderName}
+      />
+
+      {/* Upload Chapter Modal (.pdf, .docx, .doc, .md, .txt) */}
+      <UploadChapterModal
+        isOpen={isUploadChapterOpen}
+        onClose={() => setIsUploadChapterOpen(false)}
+        nextChapterOrder={chapters.length + 1}
+        onChapterUploaded={handleChapterUploaded}
       />
     </div>
   );
