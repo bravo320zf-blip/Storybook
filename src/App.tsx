@@ -676,6 +676,7 @@ export const App: React.FC = () => {
         onImportComplete={(imported) => {
           setStories([imported, ...stories]);
           setActiveStory(imported);
+          setCurrentView('editor');
         }}
       />
     </div>

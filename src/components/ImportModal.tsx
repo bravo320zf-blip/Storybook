@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
-import { Upload, X, FileText, Check } from 'lucide-react';
+import { Upload, X, FileText, Check, Loader2, FileCode, BookOpen, AlertCircle } from 'lucide-react';
 import { Story } from '../types';
+import { parseDocumentFile, ParsedDocument } from '../utils/documentParser';
+import { ensureStoryChapters } from '../utils/chapterHelpers';
 
 interface ImportModalProps {
   isOpen: boolean;
@@ -16,24 +18,33 @@ export const ImportModal: React.FC<ImportModalProps> = ({
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
+  const [format, setFormat] = useState<ParsedDocument['detectedFormat']>('text');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = e.target.files?.[0];
     if (!selected) return;
 
     setFile(selected);
-    const fileNameWithoutExt = selected.name.replace(/\.[^/.]+$/, '');
-    setTitle(fileNameWithoutExt);
+    setIsProcessing(true);
+    setErrorMessage(null);
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const text = event.target?.result as string;
-      setContent(text);
-    };
-    reader.readAsText(selected);
+    try {
+      const parsed = await parseDocumentFile(selected);
+      setTitle(parsed.title);
+      setContent(parsed.content);
+      setFormat(parsed.detectedFormat);
+    } catch (err: any) {
+      console.error('Failed to parse document:', err);
+      setErrorMessage(
+        err?.message || 'Could not parse document. Please check if the file is password-protected or try saving as .txt/.docx.'
+      );
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleFinishImport = () => {
@@ -42,9 +53,9 @@ export const ImportModal: React.FC<ImportModalProps> = ({
     const words = (content.match(/\S+/g) || []).length;
     const firstSentence = content.slice(0, 160).split(/[.!?]/)[0] || '';
 
-    const newStory: Story = {
+    const baseStory: Story = {
       id: `story-${Date.now()}`,
-      title: title || 'Imported Draft',
+      title: title.trim() || 'Imported Draft',
       status: 'drafting',
       words,
       edited: Date.now(),
@@ -52,13 +63,29 @@ export const ImportModal: React.FC<ImportModalProps> = ({
       summary: firstSentence ? `${firstSentence}.` : 'Imported draft waiting for your next scene.',
     };
 
-    onImportComplete(newStory);
+    // Auto-organize into chapters and letter-sized pages
+    const chapters = ensureStoryChapters(baseStory);
+    const structuredStory: Story = {
+      ...baseStory,
+      chapters,
+      activeChapterId: chapters[0]?.id,
+      activePageId: chapters[0]?.pages[0]?.id,
+    };
+
+    onImportComplete(structuredStory);
     onClose();
   };
 
+  const formatBadges = [
+    { ext: '.txt', label: 'Plain Text' },
+    { ext: '.md', label: 'Markdown' },
+    { ext: '.docx / .doc', label: 'Word' },
+    { ext: '.pdf', label: 'PDF' },
+  ];
+
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-dialog" style={{ maxWidth: '520px' }} onClick={(e) => e.stopPropagation()}>
+      <div className="modal-dialog" style={{ maxWidth: '540px' }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Upload size={18} style={{ color: 'var(--accent)' }} />
@@ -70,59 +97,161 @@ export const ImportModal: React.FC<ImportModalProps> = ({
         </div>
 
         <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-          <p style={{ fontSize: '0.88rem', color: 'var(--muted)' }}>
-            Choose any <code>.txt</code> or <code>.md</code> manuscript file from your computer or Google Drive. Storyboard preserves all headings and word counts.
+          <p style={{ fontSize: '0.88rem', color: 'var(--muted)', lineHeight: 1.5 }}>
+            Import your existing manuscript from your computer or Google Drive. Headings and word counts are preserved and paginated into standard letter-sized pages.
           </p>
+
+          {/* Supported formats row */}
+          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+            {formatBadges.map((badge) => (
+              <span
+                key={badge.ext}
+                style={{
+                  fontSize: '0.72rem',
+                  padding: '3px 8px',
+                  borderRadius: '12px',
+                  background: 'var(--bg)',
+                  border: '1px solid var(--line)',
+                  color: 'var(--muted)',
+                  fontWeight: 600,
+                }}
+              >
+                {badge.ext} · {badge.label}
+              </span>
+            ))}
+          </div>
 
           <label
             style={{
               border: '2px dashed var(--line)',
               borderRadius: '8px',
-              padding: '30px 20px',
+              padding: '28px 20px',
               textAlign: 'center',
-              cursor: 'pointer',
+              cursor: isProcessing ? 'wait' : 'pointer',
               background: 'var(--bg)',
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
               gap: '10px',
+              transition: 'all 0.2s ease',
             }}
           >
-            <Upload size={24} style={{ color: 'var(--accent)' }} />
-            <span style={{ fontSize: '0.9rem', fontWeight: 600 }}>
-              {file ? file.name : 'Click to select a .txt or .md file'}
-            </span>
-            <span style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>
-              Plain text or markdown manuscripts
-            </span>
+            {isProcessing ? (
+              <>
+                <Loader2 size={26} className="animate-spin" style={{ color: 'var(--accent)' }} />
+                <span style={{ fontSize: '0.9rem', fontWeight: 600 }}>
+                  Extracting text and pages…
+                </span>
+                <span style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>
+                  Parsing {file?.name}
+                </span>
+              </>
+            ) : (
+              <>
+                <Upload size={26} style={{ color: 'var(--accent)' }} />
+                <span style={{ fontSize: '0.92rem', fontWeight: 600 }}>
+                  {file ? file.name : 'Click or drop a file to import'}
+                </span>
+                <span style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>
+                  Supports .pdf, .docx, .doc, .md, .txt
+                </span>
+              </>
+            )}
             <input
               type="file"
-              accept=".txt,.md,.markdown"
+              accept=".txt,.md,.markdown,.docx,.doc,.pdf,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
               onChange={handleFileChange}
+              disabled={isProcessing}
               style={{ display: 'none' }}
             />
           </label>
 
-          {content && (
-            <div>
-              <label style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--muted)', display: 'block', marginBottom: '6px' }}>
-                Draft Title
-              </label>
-              <input
-                type="text"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
+          {errorMessage && (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '10px 14px',
+                background: 'rgba(217, 83, 79, 0.1)',
+                border: '1px solid rgba(217, 83, 79, 0.3)',
+                borderRadius: '6px',
+                color: '#d9534f',
+                fontSize: '0.85rem',
+              }}
+            >
+              <AlertCircle size={16} style={{ flexShrink: 0 }} />
+              <span>{errorMessage}</span>
+            </div>
+          )}
+
+          {content && !isProcessing && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div>
+                <label
+                  style={{
+                    fontSize: '0.75rem',
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    color: 'var(--muted)',
+                    display: 'block',
+                    marginBottom: '6px',
+                  }}
+                >
+                  Draft Title
+                </label>
+                <input
+                  type="text"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  style={{
+                    width: '100%',
+                    background: 'var(--bg)',
+                    border: '1px solid var(--line)',
+                    borderRadius: '6px',
+                    padding: '8px 12px',
+                    fontSize: '0.9rem',
+                    color: 'var(--ink)',
+                  }}
+                />
+              </div>
+
+              <div
                 style={{
-                  width: '100%',
                   background: 'var(--bg)',
                   border: '1px solid var(--line)',
                   borderRadius: '6px',
-                  padding: '8px 12px',
-                  fontSize: '0.9rem',
+                  padding: '10px 14px',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
                 }}
-              />
-              <div style={{ fontSize: '0.78rem', color: 'var(--muted)', marginTop: '4px' }}>
-                Detected {(content.match(/\S+/g) || []).length.toLocaleString()} words in this draft.
+              >
+                <span style={{ fontSize: '0.82rem', color: 'var(--muted)' }}>
+                  Detected Format: <strong style={{ color: 'var(--ink)', textTransform: 'capitalize' }}>{format}</strong>
+                </span>
+                <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--accent)' }}>
+                  {(content.match(/\S+/g) || []).length.toLocaleString()} words
+                </span>
+              </div>
+
+              {/* Preview snippet */}
+              <div
+                style={{
+                  maxHeight: '120px',
+                  overflowY: 'auto',
+                  padding: '8px 12px',
+                  background: 'var(--panel)',
+                  border: '1px solid var(--line)',
+                  borderRadius: '6px',
+                  fontSize: '0.8rem',
+                  fontFamily: 'var(--font-mono, monospace)',
+                  color: 'var(--muted)',
+                  whiteSpace: 'pre-wrap',
+                }}
+              >
+                {content.slice(0, 400)}
+                {content.length > 400 ? '…' : ''}
               </div>
             </div>
           )}
@@ -135,7 +264,7 @@ export const ImportModal: React.FC<ImportModalProps> = ({
           <button
             className="action-btn-primary"
             onClick={handleFinishImport}
-            disabled={!content.trim()}
+            disabled={!content.trim() || isProcessing}
           >
             <Check size={16} />
             <span>Import to Storyboard</span>
@@ -145,3 +274,4 @@ export const ImportModal: React.FC<ImportModalProps> = ({
     </div>
   );
 };
+
