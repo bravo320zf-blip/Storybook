@@ -97,15 +97,25 @@ export interface Character {
 }
 
 export type MapAspect = 'screen' | 'book' | 'poster' | 'square' | 'wide';
-export type MapStyle = 'wash' | 'night' | 'parchment';
+export type MapStyle = 'wash' | 'night' | 'parchment' | 'sylvan';
 
 export interface MapStamp {
   id: string;
-  type: string; // 'castle' | 'city' | 'tower' | 'tavern' | 'mountain' | 'tree' | 'dragon' | 'serpent' | 'compass' | 'ship'
+  type: string;
   x: number;
   y: number;
   scale: number;
+  rotation?: number;
   label?: string;
+  color?: string;
+}
+
+export interface MapPath {
+  id: string;
+  type: 'coast' | 'river' | 'road' | 'border';
+  points: { x: number; y: number }[];
+  color?: string;
+  strokeWidth?: number;
 }
 
 export interface MapRealm {
@@ -123,6 +133,7 @@ export interface WorldMap {
   aspect: MapAspect;
   storyId?: string;
   stamps: MapStamp[];
+  paths?: MapPath[];
   realms: MapRealm[];
   notes?: string;
   updatedAt: number;
